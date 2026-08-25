@@ -1,0 +1,79 @@
+# ResearchForge-ECRM Docker Compose
+# Services: API, Neo4j, PostgreSQL, MLflow
+
+version: "3.9"
+
+services:
+  # ── ResearchForge API ─────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: researchforge-api
+    ports:
+      - "8000:8000"
+    environment:
+      - LLM_PROVIDER=${LLM_PROVIDER:-mock}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - DATABASE_URL=postgresql://researchforge:researchforge@postgres:5432/researchforge
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_ENABLED=${NEO4J_ENABLED:-false}
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  # ── PostgreSQL ────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: researchforge-postgres
+    environment:
+      POSTGRES_USER: researchforge
+      POSTGRES_PASSWORD: researchforge
+      POSTGRES_DB: researchforge
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/migrations:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+
+  # ── Neo4j ─────────────────────────────────────────────────────────────────
+  neo4j:
+    image: neo4j:5-community
+    container_name: researchforge-neo4j
+    environment:
+      NEO4J_AUTH: neo4j/password
+      NEO4J_PLUGINS: '["apoc"]'
+    volumes:
+      - neo4jdata:/data
+    ports:
+      - "7474:7474"   # Browser
+      - "7687:7687"   # Bolt
+    restart: unless-stopped
+
+  # ── MLflow ────────────────────────────────────────────────────────────────
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:latest
+    container_name: researchforge-mlflow
+    command: >
+      mlflow server
+        --backend-store-uri postgresql://researchforge:researchforge@postgres:5432/researchforge
+        --default-artifact-root /mlartifacts
+        --host 0.0.0.0
+        --port 5000
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlartifacts:/mlartifacts
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  neo4jdata:
+  mlartifacts:
