@@ -15,6 +15,7 @@ from benchmarks.metrics import compute_all_metrics
 from benchmarks.tasks.cifar10_task import CIFAR10Task
 from benchmarks.tasks.ecg_task import ECGTask
 from benchmarks.tasks.synthetic_task import SyntheticTimeSeriesTask
+from benchmarks.tasks.digits_task import DigitsTask
 from ecrm.memory_store import ECRMMemoryStore
 from rdg.graph import ResearchDevelopmentGraph
 from rdg.nodes import RDGNode
@@ -25,6 +26,7 @@ TASKS = {
     "cifar10": CIFAR10Task,
     "ecg": ECGTask,
     "synthetic": SyntheticTimeSeriesTask,
+    "digits": DigitsTask,
 }
 
 
@@ -61,7 +63,10 @@ class BenchmarkEvaluator:
                 logger.warning("Unknown task: %s", task_name)
                 continue
 
-            task = task_cls(mock=self.mock)
+            # Digits is bundled with scikit-learn and therefore provides the
+            # default real, network-free evaluation track.  Other task
+            # adapters retain their explicit mock/real configuration.
+            task = task_cls() if task_name == "digits" else task_cls(mock=self.mock)
             result = self._run_single_task(task_name, task)
             all_results[task_name] = result
 
@@ -94,6 +99,7 @@ class BenchmarkEvaluator:
             memory=memory,
             problem_description=task.description(),
             use_mock_experiments=self.mock,
+            task=task,
         )
 
         t0 = time.time()

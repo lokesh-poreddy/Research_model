@@ -40,6 +40,12 @@ def ucb_score(
     bonus = c * math.sqrt(math.log(total) / (1 + n_tried))
     score = reward + bonus
 
+    # V2: ECRM changes the action ranking through context-sensitive empirical
+    # support.  This makes memory part of the control policy rather than
+    # passive text injected into a prompt.
+    if memory is not None:
+        score += memory.decision_support(node.content)["adjustment"]
+
     # Penalise if memory contains a similar failure
     if memory is not None and memory.has_similar_failure(node.content):
         score *= failure_penalty

@@ -31,6 +31,7 @@ from evolution.mutate import random_mutation
 from evolution.crossover import crossover
 from policy.acquisition import select_branch
 from policy.rl_policy import QLearningPolicy
+from policy.strategy_portfolio import StrategyPortfolio
 from failure.diagnosis import diagnose_failure
 from failure.repair import apply_repair
 from failure.taxonomy import FailureCategory
@@ -69,6 +70,7 @@ class ResearchController:
 
         # Policy
         self.policy = QLearningPolicy()
+        self.strategy_portfolio = StrategyPortfolio()
 
         # State
         self.total_experiments = 0
@@ -132,10 +134,12 @@ class ResearchController:
 
         # ── 3. Evolve genome ──────────────────────────────────────────────────
         parent_genome = self.population[-1]
+        evolution_strategy = self.strategy_portfolio.select()
         if len(self.population) >= 2 and self.total_experiments % 5 == 0:
             genome = crossover(self.population[-1], self.population[-2])
+            evolution_strategy = "crossover"
         else:
-            genome = random_mutation(parent_genome)
+            genome = random_mutation(parent_genome, operator_hint=evolution_strategy)
 
         # ── 4. Create Experiment node ─────────────────────────────────────────
         exp_node = RDGNode.experiment(
@@ -153,6 +157,16 @@ class ResearchController:
             use_mock=self.use_mock,
             task=self.task,
         )
+        result.setdefault(
+            "memory_context",
+            {
+                "domain": getattr(self.task, "domain", "machine_learning"),
+                "task_id": getattr(self.task, "name", type(self.task).__name__) if self.task else "unspecified",
+                "objective": "maximize_validation_score",
+                "model_family": genome.data_settings.get("estimator", genome.architecture.get("type", "unknown")),
+            },
+        )
+        result.setdefault("strategy_id", genome.strategy_description or genome.fingerprint())
         # The comparison point is recorded with the episode so ECRM can keep
         # only interventions that beat the state of knowledge at decision time.
         result.setdefault("baseline", self.best_score)
@@ -200,6 +214,10 @@ class ResearchController:
 
         # ── 9. Policy update ──────────────────────────────────────────────────
         reward = score - (self.best_score * 0.9)  # relative improvement
+        if evolution_strategy != "crossover":
+            self.strategy_portfolio.record(
+                evolution_strategy, score - float(result.get("baseline", 0.0)), bool(result["success"])
+            )
         next_nodes = self.rdg.next_hypotheses(selected_hypothesis)
         self.policy.update(selected_hypothesis, reward, next_nodes)
 
@@ -220,6 +238,7 @@ class ResearchController:
             "success": result["success"],
             "best_score": self.best_score,
             "failure_category": failure_cat.value,
+            "evolution_strategy": evolution_strategy,
             "discovery_triggered": triggered_discovery,
         }
 
@@ -245,4 +264,5 @@ class ResearchController:
             "population_size": len(self.population),
             "rdg_stats": self.rdg.stats(),
             "memory_stats": self.memory.stats(),
+            "strategy_portfolio": self.strategy_portfolio.summary(),
         }

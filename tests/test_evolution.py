@@ -3,6 +3,7 @@ Unit tests for Evolution operators.
 """
 import pytest
 from evolution.genome import ModelGenome
+from policy.strategy_portfolio import StrategyPortfolio
 from evolution.mutate import (
     param_mutation,
     optimizer_mutation,
@@ -51,6 +52,11 @@ class TestMutationOperators:
         )
         assert changed
 
+    def test_policy_selected_mutation_is_recorded_in_genome(self):
+        child = random_mutation(ModelGenome(), operator_hint="optimizer_mutation")
+        assert child.strategy_description == "optimizer_mutation"
+
+
     def test_param_mutation_increments_generation(self):
         mutated = param_mutation(self.genome)
         assert mutated.generation == self.genome.generation + 1
@@ -82,6 +88,14 @@ class TestMutationOperators:
     def test_random_mutation_returns_child(self):
         child = random_mutation(self.genome)
         assert child.model_id != self.genome.model_id
+
+
+class TestStrategyPortfolio:
+    def test_portfolio_switches_away_from_saturated_strategy(self):
+        portfolio = StrategyPortfolio()
+        for _ in range(8):
+            portfolio.record("param_mutation", improvement=-0.1, success=False)
+        assert portfolio.select() != "param_mutation"
 
 
 class TestCrossover:

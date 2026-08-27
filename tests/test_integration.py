@@ -11,6 +11,7 @@ from rdg.edges import EdgeRelation
 from benchmarks.metrics import compute_all_metrics
 from failure.taxonomy import FailureCategory
 from benchmarks.tasks import DigitsTask
+from benchmarks.evaluator import BenchmarkEvaluator
 
 
 class TestResearchLoop:
@@ -60,6 +61,7 @@ class TestResearchLoop:
         self.controller.run(n_iterations=5)
         # Policy Q-table should have some entries
         assert len(self.controller.policy.q) > 0
+        assert self.controller._summarize()["strategy_portfolio"]
 
 
 class TestBenchmarkMetrics:
@@ -97,6 +99,13 @@ class TestRealOfflineTraining:
         summary = controller.run(n_iterations=2)
         assert summary["best_score"] > 0.50
         assert all("score" in step for step in controller.history)
+
+    def test_digits_benchmark_track_runs_real_evaluation(self, tmp_path):
+        evaluator = BenchmarkEvaluator(
+            tasks=["digits"], n_iterations=2, mock=False, output_dir=str(tmp_path)
+        )
+        report = evaluator.run()
+        assert report["digits"]["best_score"] > 0.5
 
 
 class TestFailureDiagnosis:

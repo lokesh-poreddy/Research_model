@@ -76,6 +76,50 @@ class TestMemoryStore:
         )
         assert related > unrelated
 
+    def test_contextual_retrieval_downweights_incompatible_success(self):
+        self.store.store(
+            "use focal loss for an imbalanced ECG task",
+            outcome={"score": 0.92, "success": True, "baseline": 0.70},
+            context={"domain": "healthcare", "task_id": "ecg", "data_regime": "imbalanced"},
+        )
+        self.store.store(
+            "avoid focal loss because it hurt balanced image classification",
+            outcome={"score": 0.45, "success": False, "baseline": 0.75},
+            failure_flags=["LowPerformance"],
+            context={"domain": "vision", "task_id": "images", "data_regime": "balanced"},
+        )
+        matches = self.store.retrieve_for_context(
+            "focal loss for ECG classification",
+            {"domain": "healthcare", "task_id": "ecg", "data_regime": "imbalanced"},
+        )
+        assert matches[0][0].outcome["success"] is True
+
+    def test_decision_support_penalizes_relevant_negative_evidence(self):
+        self.store.store(
+            "increase learning rate for unstable ECG training",
+            outcome={"score": 0.1, "success": False, "baseline": 0.4},
+            failure_flags=["Divergence"],
+            context={"domain": "healthcare", "task_id": "ecg"},
+        )
+        support = self.store.decision_support(
+            "increase learning rate for unstable ECG training",
+            {"domain": "healthcare", "task_id": "ecg"},
+        )
+        assert support["negative"] > support["positive"]
+        assert support["adjustment"] < 0
+
+    def test_duplicate_procedural_lesson_is_consolidated(self):
+        kwargs = {
+            "text": "increase SVC regularization on small digits data",
+            "outcome": {"score": 0.9, "success": True, "baseline": 0.8},
+            "context": {"domain": "vision", "task_id": "digits"},
+        }
+        first = self.store.store(**kwargs)
+        second = self.store.store(**kwargs)
+        assert len(self.store) == 1
+        assert first.record_id == second.record_id
+        assert second.evidence_count == 2
+
     def test_save_load(self, tmp_path):
         self.store.store("test record", outcome={"score": 0.7, "success": True})
         path = str(tmp_path / "memory.json")

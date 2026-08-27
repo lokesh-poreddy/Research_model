@@ -96,9 +96,11 @@ class AnalyzerAgent(BaseAgent):
             text=hypothesis_node.content,
             outcome={"score": score, "success": success,
                      "baseline": result.get("baseline", 0.0),
-                     "error": result.get("error", "")},
+                     "error": result.get("error", ""),
+                     "strategy_id": result.get("strategy_id", "")},
             link_node=hypothesis_node.id,
             failure_flags=failure_flags,
+            context=result.get("memory_context", {}),
         )
 
         logger.info(

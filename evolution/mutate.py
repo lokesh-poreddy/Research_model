@@ -73,7 +73,7 @@ def param_mutation(genome: ModelGenome, delta: float = 0.1) -> ModelGenome:
         if param in ("batch_size", "epochs"):
             new_val = int(min(512 if param == "batch_size" else 500, val + 1))
         else:
-            new_val = float(val) * (1.0 + delta if val else delta)
+            new_val = float(val) * (1.0 + delta) if val else max(1e-6, delta)
 
     child.hyperparameters[param] = new_val
     child.strategy_description = (
@@ -159,16 +159,28 @@ def augmentation_mutation(genome: ModelGenome) -> ModelGenome:
     return child
 
 
-def random_mutation(genome: ModelGenome, delta: float = 0.1) -> ModelGenome:
-    """Apply a randomly chosen mutation operator."""
-    ops = [
-        param_mutation,
-        optimizer_mutation,
-        structure_mutation_add_layer,
-        structure_mutation_remove_layer,
-        augmentation_mutation,
-    ]
-    op = random.choice(ops)
+MUTATION_OPERATORS = {
+    "param_mutation": param_mutation,
+    "optimizer_mutation": optimizer_mutation,
+    "structure_add": structure_mutation_add_layer,
+    "structure_remove": structure_mutation_remove_layer,
+    "augmentation_mutation": augmentation_mutation,
+}
+
+
+def random_mutation(
+    genome: ModelGenome, delta: float = 0.1, operator_hint: Optional[str] = None
+) -> ModelGenome:
+    """Apply a randomly chosen or policy-selected mutation operator."""
+    if operator_hint is not None and operator_hint not in MUTATION_OPERATORS:
+        raise ValueError(f"Unknown mutation operator: {operator_hint}")
+    op = MUTATION_OPERATORS[operator_hint] if operator_hint else random.choice(list(MUTATION_OPERATORS.values()))
     if op == param_mutation:
-        return op(genome, delta)
-    return op(genome)
+        child = op(genome, delta)
+    else:
+        child = op(genome)
+    if not child.strategy_description:
+        child.strategy_description = operator_hint or next(
+            name for name, candidate in MUTATION_OPERATORS.items() if candidate == op
+        )
+    return child

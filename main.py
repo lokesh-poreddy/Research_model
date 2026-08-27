@@ -120,7 +120,7 @@ def run(problem: str, iterations: int, mock: bool) -> None:
 
 
 @cli.command()
-@click.option("--tasks", default="cifar10,synthetic", help="Comma-separated task names")
+@click.option("--tasks", default="digits,synthetic", help="Comma-separated task names")
 @click.option("--iterations", default=15, help="Iterations per task")
 @click.option("--mock/--no-mock", default=True)
 def benchmark(tasks: str, iterations: int, mock: bool) -> None:

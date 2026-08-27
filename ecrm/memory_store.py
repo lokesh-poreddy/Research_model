@@ -18,8 +18,10 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
-from ecrm.consolidation import prune_records
+from ecrm.consolidation import prune_records, retention_score
+from ecrm.context import canonical_context, context_compatibility
 from ecrm.embedder import cosine_similarity, embed_text
+from ecrm.lessons import derive_lesson
 from ecrm.negative_transfer import NTRDetector
 from ecrm.res_scorer import compute_res
 
@@ -41,6 +43,10 @@ class MemoryRecord:
     domain: str = ""
     task_id: str = ""
     hypothesis_id: str = ""
+    context: Dict[str, str] = field(default_factory=dict)
+    lesson: str = ""
+    memory_kind: str = "episode"  # episode | procedural | negative_evidence
+    evidence_count: int = 1
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -55,6 +61,10 @@ class MemoryRecord:
             "domain": self.domain,
             "task_id": self.task_id,
             "hypothesis_id": self.hypothesis_id,
+            "context": self.context,
+            "lesson": self.lesson,
+            "memory_kind": self.memory_kind,
+            "evidence_count": self.evidence_count,
         }
 
     @classmethod
@@ -73,6 +83,10 @@ class MemoryRecord:
             domain=d.get("domain", ""),
             task_id=d.get("task_id", ""),
             hypothesis_id=d.get("hypothesis_id", ""),
+            context=canonical_context(d.get("context", {})),
+            lesson=d.get("lesson", ""),
+            memory_kind=d.get("memory_kind", "episode"),
+            evidence_count=int(d.get("evidence_count", 1)),
         )
 
 
@@ -93,12 +107,14 @@ class ECRMMemoryStore:
         max_records: int = 10_000,
         ntr_threshold: float = 0.3,
         embedding_model: str = "all-MiniLM-L6-v2",
+        min_improvement: float = 0.005,
     ):
         self._dim = dim
         self._retain_lambda = retain_lambda
         self._retain_threshold = retain_threshold
         self._max_records = max_records
         self._embedding_model = embedding_model
+        self._min_improvement = min_improvement
         self._records: List[MemoryRecord] = []
         self._ntr_detector = NTRDetector(threshold=ntr_threshold)
         self._use_faiss = False
@@ -136,6 +152,8 @@ class ECRMMemoryStore:
         task_id: str = "",
         hypothesis_id: str = "",
         force: bool = False,
+        context: Optional[Dict[str, Any]] = None,
+        lesson: str = "",
     ) -> MemoryRecord:
         """Embed and store a reusable research lesson.
 
@@ -149,19 +167,33 @@ class ECRMMemoryStore:
         # A failed attempt is itself useful negative evidence, even when the
         # evaluator has not supplied a more specific diagnosis yet.
         has_failure = (not success) or bool(failure_flags) or bool(outcome.get("error"))
-        if not force and not has_failure and not (success and score > baseline):
+        if not force and not has_failure and not (success and score >= baseline + self._min_improvement):
             return MemoryRecord(text=text, outcome=outcome, link_node=link_node)
-        embedding = embed_text(text, model_name=self._embedding_model, dim=self._dim)
+        normalized_context = canonical_context(context or {"domain": domain, "task_id": task_id})
+        memory_kind = "negative_evidence" if has_failure else "procedural"
+        lesson = lesson or derive_lesson(text, outcome, normalized_context)
+        duplicate = self._find_duplicate(lesson, normalized_context, memory_kind)
+        if duplicate is not None:
+            duplicate.evidence_count += 1
+            duplicate.reliability = max(duplicate.reliability, self._reliability(score, has_failure))
+            return duplicate
+
+        # Retrieve procedural meaning, while retaining the full episode text
+        # for auditability in the RDG.
+        embedding = embed_text(lesson, model_name=self._embedding_model, dim=self._dim)
         record = MemoryRecord(
             text=text,
             embedding=embedding,
             outcome=outcome,
             link_node=link_node,
             failure_flags=failure_flags or [],
-            reliability=float(score),
+            reliability=self._reliability(score, has_failure),
             domain=domain,
             task_id=task_id,
             hypothesis_id=hypothesis_id,
+            context=normalized_context,
+            lesson=lesson,
+            memory_kind=memory_kind,
         )
         self._records.append(record)
         self._add_to_faiss(embedding, record.record_id)
@@ -170,6 +202,21 @@ class ECRMMemoryStore:
         if len(self._records) % 100 == 0:
             self.consolidate()
         return record
+
+    def _find_duplicate(
+        self, lesson: str, context: Dict[str, str], memory_kind: str
+    ) -> Optional[MemoryRecord]:
+        """Consolidate identical lessons instead of retaining repeated traces."""
+        for record in self._records:
+            if record.lesson == lesson and record.context == context and record.memory_kind == memory_kind:
+                return record
+        return None
+
+    @staticmethod
+    def _reliability(score: float, is_failure: bool) -> float:
+        # A diagnosed failure is valuable negative evidence even when its task
+        # score is zero; otherwise consolidation would erase it first.
+        return max(0.6, min(1.0, 1.0 - score)) if is_failure else max(0.05, min(1.0, score))
 
     def retrieve(
         self,
@@ -232,9 +279,51 @@ class ECRMMemoryStore:
         """Return True if a very similar past experiment failed."""
         results = self.retrieve(query, top_k=3)
         for rec, sim in results:
-            if sim >= threshold and rec.failure_flags:
+            if sim >= threshold and (rec.failure_flags or not rec.outcome.get("success", False)):
                 return True
         return False
+
+    def retrieve_for_context(
+        self,
+        query: str,
+        context: Optional[Dict[str, Any]] = None,
+        top_k: int = 5,
+    ) -> List[Tuple[MemoryRecord, float]]:
+        """Retrieve lessons weighted by semantic similarity and applicability."""
+        target_context = canonical_context(context)
+        q_vec = embed_text(query, model_name=self._embedding_model, dim=self._dim)
+        now = datetime.now(timezone.utc)
+        scored: List[Tuple[MemoryRecord, float]] = []
+        for record in self._records:
+            if record.embedding is None:
+                continue
+            semantic = max(0.0, cosine_similarity(q_vec, record.embedding))
+            compatibility = context_compatibility(record.context, target_context)
+            freshness = retention_score(record, now, self._retain_lambda)
+            ntr_penalty = 1.0 - self.get_ntr(record.outcome.get("strategy_id"))
+            score = semantic * compatibility * freshness * max(0.1, ntr_penalty)
+            scored.append((record, score))
+        scored.sort(key=lambda item: item[1], reverse=True)
+        return scored[:top_k]
+
+    def decision_support(
+        self, query: str, context: Optional[Dict[str, Any]] = None, top_k: int = 5
+    ) -> Dict[str, float]:
+        """Convert retrieved evidence into a bounded policy adjustment.
+
+        Positive and negative evidence are kept separate, so the controller
+        can favor a validated intervention while still avoiding contexts where
+        it repeatedly failed.
+        """
+        positive = negative = 0.0
+        for record, weight in self.retrieve_for_context(query, context, top_k):
+            if record.outcome.get("success", False):
+                positive += weight
+            else:
+                negative += weight
+        evidence = positive + negative
+        adjustment = 0.0 if evidence == 0 else max(-0.4, min(0.4, (positive - negative) / evidence * 0.4))
+        return {"positive": positive, "negative": negative, "confidence": min(1.0, evidence), "adjustment": adjustment}
 
     # ── NTR interface ─────────────────────────────────────────────────────────
 
@@ -297,6 +386,8 @@ class ECRMMemoryStore:
             "total_records": len(self._records),
             "successful": success,
             "failed": len(self._records) - success,
+            "procedural": sum(1 for r in self._records if r.memory_kind == "procedural"),
+            "negative_evidence": sum(1 for r in self._records if r.memory_kind == "negative_evidence"),
             "global_ntr": self.get_ntr(),
         }
 

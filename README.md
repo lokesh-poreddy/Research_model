@@ -18,6 +18,21 @@ ResearchForge-ECRM is a multi-agent framework that autonomously discovers, tests
 | **UCB + RL Policy** | Bandit and Q-learning policies for intelligent branch selection |
 | **RDE-Bench** | 7-metric benchmark suite (RE, SE, FRR, NTR, MU, half-life, RRS) |
 
+## V2: research-grade continual improvement
+
+Version 2 makes the memory/policy contribution explicit. ECRM now stores
+compact procedural lessons and negative evidence only when they are useful,
+scores their compatibility with the current research context, consolidates
+duplicates, and uses the resulting positive/negative support to adjust branch
+selection. A strategy portfolio keeps evolution from saturating a single
+mutation family.
+
+Read the [v2 research protocol](docs/V2_RESEARCH_PROTOCOL.md) before claiming
+an improvement, and see [literature positioning](docs/LITERATURE_POSITIONING.md)
+for the primary-source comparison. The project is designed to test whether
+structured experience improves research decisions—not to imitate another
+system's interface or claim its results.
+
 ---
 
 ## System Architecture
@@ -317,7 +332,11 @@ python main.py run --problem "Discover novel optimizers for ResNets" --iteration
 ### 5. Run Benchmarks
 
 ```bash
-python main.py benchmark --tasks cifar10,synthetic --iterations 20
+# Real network-free benchmark track
+python main.py benchmark --tasks digits --iterations 7 --no-mock
+
+# Mock adapters are useful for wiring and UI development, not scientific claims
+python main.py benchmark --tasks cifar10,synthetic --iterations 20 --mock
 ```
 
 ### 6. Start REST API
