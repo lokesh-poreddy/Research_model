@@ -1,6 +1,11 @@
 """
 AnalyzerAgent: interprets experiment results, creates Finding and
-Claim nodes in the RDG, and updates the ECRM memory.
+Claim nodes in the RDG, and updates the ECRM memory — v2.
+
+v2 changes:
+- ``memory.record_ntr()`` is called after every episode so the NTR
+  detector accumulates real data (previously it was never called).
+- ``strategy_id`` and baseline/achieved are forwarded from ``result``.
 """
 from __future__ import annotations
 
@@ -92,16 +97,29 @@ class AnalyzerAgent(BaseAgent):
         hypothesis_node.times_tried += 1
 
         # Store in ECRM
+        strategy_id = result.get("strategy_id", "")
+        baseline = float(result.get("baseline", 0.0))
         memory.store(
             text=hypothesis_node.content,
             outcome={"score": score, "success": success,
-                     "baseline": result.get("baseline", 0.0),
+                     "baseline": baseline,
                      "error": result.get("error", ""),
-                     "strategy_id": result.get("strategy_id", "")},
+                     "strategy_id": strategy_id},
             link_node=hypothesis_node.id,
             failure_flags=failure_flags,
             context=result.get("memory_context", {}),
         )
+
+        # v2: Record NTR so the NTR detector has real data.
+        # ``used_memory`` is True when the hypothesis was informed by a
+        # retrieved lesson (approximated by memory store being non-empty).
+        if strategy_id:
+            memory.record_ntr(
+                strategy_id=strategy_id,
+                used_memory=len(memory) > 0,
+                baseline=baseline,
+                achieved=score,
+            )
 
         logger.info(
             "[AnalyzerAgent] Finding created (score=%.4f, flags=%s).",

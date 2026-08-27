@@ -168,6 +168,33 @@ class ResearchDevelopmentGraph:
             self.remove_node(nid)
         return merged
 
+    def promote_claim(
+        self,
+        claim_id: str,
+        gate_result: Dict[str, Any],
+    ) -> RDGNode:
+        """Mark a Claim node as promoted and record the promotion gate decision.
+
+        v2 protocol: promotion requires seeds, budget, held-out split, and
+        a minimum improvement over champion.  The gate decision is stored as
+        node attributes for auditability.
+
+        Args:
+            claim_id: ID of the Claim node to promote.
+            gate_result: Dict from ``_check_promotion_gate()`` with keys:
+                         passed, seeds_run, compute_hours, improvement, reason.
+
+        Returns:
+            The updated Claim node.
+        """
+        node = self._nodes.get(claim_id)
+        if node is None:
+            raise KeyError(f"Claim node '{claim_id}' not found in RDG.")
+        node.attributes["promoted"] = gate_result.get("passed", False)
+        node.attributes["promotion_gate"] = gate_result
+        self._graph.nodes[claim_id].update(node.to_dict())
+        return node
+
     # ── Statistics ────────────────────────────────────────────────────────────
 
     def stats(self) -> Dict[str, Any]:
@@ -175,11 +202,13 @@ class ResearchDevelopmentGraph:
         by_type: Dict[str, int] = {}
         for n in self._nodes.values():
             by_type[n.type.value] = by_type.get(n.type.value, 0) + 1
+        broken = len(self.find_broken_chains())
         return {
             "total_nodes": total,
             "total_edges": len(self._edges),
             "by_type": by_type,
             "graph_id": self.graph_id,
+            "broken_chains_count": broken,  # v2: chain integrity monitor
         }
 
     # ── Serialisation ──────────────────────────────────────────────────────────

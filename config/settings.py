@@ -1,9 +1,8 @@
 """
-ResearchForge-ECRM Configuration Settings
+ResearchForge-ECRM Configuration Settings — v2
 """
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Optional
 
@@ -22,7 +21,7 @@ class Settings(BaseSettings):
 
     # ── Project ──────────────────────────────────────────────────────────────
     project_name: str = "ResearchForge-ECRM"
-    version: str = "1.0.0"
+    version: str = "2.0.0"
     debug: bool = False
     log_level: str = "INFO"
 
@@ -31,9 +30,13 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o"
     anthropic_api_key: Optional[str] = None
     anthropic_model: str = "claude-3-5-sonnet-20241022"
-    llm_provider: str = "openai"          # "openai" | "anthropic" | "mock"
+    google_api_key: Optional[str] = None          # Gemini / Google AI Studio
+    google_model: str = "gemini-2.0-flash"
+    # "openai" | "anthropic" | "gemini" | "mock"
+    llm_provider: str = "openai"
     llm_max_tokens: int = 4096
     llm_temperature: float = 0.7
+    llm_max_retries: int = 3              # retry-with-backoff on transient errors
 
     # ── Database ─────────────────────────────────────────────────────────────
     database_url: str = "sqlite:///./researchforge.db"
@@ -84,6 +87,11 @@ class Settings(BaseSettings):
     models_dir: str = "./saved_models"
     logs_dir: str = "./logs"
 
+    # ── v2 Promotion Gates ────────────────────────────────────────────────────
+    v2_min_seeds: int = 5                 # minimum independent seeds before promotion
+    v2_compute_budget_hours: float = 10.0  # total wall-clock budget per ablation
+    v2_promotion_min_improvement: float = 0.01  # minimum delta over champion to promote
+
     def ensure_dirs(self) -> None:
         """Create required directories if they don't exist."""
         for p in [self.data_dir, self.models_dir, self.logs_dir,
@@ -93,3 +101,4 @@ class Settings(BaseSettings):
 
 # Singleton
 settings = Settings()
+

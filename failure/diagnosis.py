@@ -1,8 +1,11 @@
 """
-Failure Diagnosis Module.
+Failure Diagnosis Module — v2.
 
 Inspects RDG nodes and experiment results to classify failures
 using the FailureTaxonomy, then returns a (category, node) tuple.
+
+v2 change: Step 1b detects Divergence from failure_flags set by
+           the AnalyzerAgent, before the semantic-chain check.
 """
 from __future__ import annotations
 
@@ -43,6 +46,16 @@ def diagnose_failure(
                 return (FailureCategory.TIMEOUT, last_node)
             logger.warning("Diagnosed: CODE_ERROR in %s", last_node.id)
             return (FailureCategory.CODE_ERROR, last_node)
+
+    # ── Step 1b: Divergence from failure_flags (v2) ───────────────────────────
+    # The AnalyzerAgent writes failure_flags from the LLM response; map the
+    # 'Divergence' string directly to the taxonomy before the chain check.
+    raw_flags = last_node.attributes.get("failure_flags", [])
+    if "Divergence" in raw_flags or "divergence" in (
+        f.lower() for f in raw_flags if isinstance(f, str)
+    ):
+        logger.warning("Diagnosed: DIVERGENCE via failure_flags in %s", last_node.id)
+        return (FailureCategory.DIVERGENCE, last_node)
 
     # ── Step 2: Semantic chain misalignment ───────────────────────────────────
     chain_edges = rdg.get_evidence_chain(last_node.id)

@@ -1,52 +1,70 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Research Development Graph (RDG) Schema",
+  "title": "RDG Memory Record Schema",
+  "description": "Schema for ECRM MemoryRecord serialisation — v2",
   "type": "object",
   "properties": {
-    "graph_id": { "type": "string" },
-    "nodes": {
+    "record_id": { "type": "string", "description": "UUID identifier" },
+    "text": { "type": "string", "description": "Natural-language summary of the episode" },
+    "embedding": {
       "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "string" },
-          "type": {
-            "type": "string",
-            "enum": ["Problem","Gap","Hypothesis","Experiment","Finding","Claim","ModelGenome","Strategy","MemoryRecord"]
-          },
-          "content": { "type": "string" },
-          "timestamp": { "type": "string", "format": "date-time" },
-          "status": {
-            "type": "string",
-            "enum": ["pending","running","completed","failed","archived"]
-          },
-          "attributes": { "type": "object" },
-          "links": { "type": "array", "items": { "type": "string" } },
-          "times_tried": { "type": "integer", "minimum": 0 },
-          "best_metric": { "type": ["number","null"] },
-          "failure_count": { "type": "integer", "minimum": 0 }
-        },
-        "required": ["id", "type", "content"]
+      "items": { "type": "number" },
+      "description": "Dense vector embedding (384-dim by default)"
+    },
+    "outcome": {
+      "type": "object",
+      "description": "Experiment outcome metadata",
+      "properties": {
+        "score": { "type": "number" },
+        "success": { "type": "boolean" },
+        "baseline": { "type": "number" },
+        "error": { "type": "string" },
+        "strategy_id": { "type": "string" }
       }
     },
-    "edges": {
+    "link_node": { "type": "string", "description": "RDG node ID this record is linked to" },
+    "failure_flags": {
       "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "string" },
-          "from": { "type": "string" },
-          "to": { "type": "string" },
-          "relation": {
-            "type": "string",
-            "enum": ["identifies","motivates","tested-by","produces","supports","derives-from","saved-as","proposes","evaluated-as","informs","updates"]
-          },
-          "confidence": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
-          "properties": { "type": "object" }
-        },
-        "required": ["from", "to", "relation"]
+      "items": { "type": "string" },
+      "description": "FailureCategory values set by the AnalyzerAgent"
+    },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "reliability": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "description": "RES score (higher = more reliable evidence)"
+    },
+    "domain": { "type": "string" },
+    "task_id": { "type": "string" },
+    "hypothesis_id": { "type": "string" },
+    "context": {
+      "type": "object",
+      "description": "Canonical context keys used in compatibility scoring",
+      "properties": {
+        "domain": { "type": "string" },
+        "task_id": { "type": "string" },
+        "objective": { "type": "string" },
+        "data_regime": { "type": "string" },
+        "model_family": { "type": "string" },
+        "modality": { "type": "string" },
+        "constraint_profile": { "type": "string" }
       }
+    },
+    "lesson": {
+      "type": "string",
+      "description": "Compact procedural lesson: action|conditions|outcome"
+    },
+    "memory_kind": {
+      "type": "string",
+      "enum": ["episode", "procedural", "negative_evidence"],
+      "description": "Classification of this memory record"
+    },
+    "evidence_count": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Number of times an identical lesson was observed (deduplication)"
     }
   },
-  "required": ["nodes", "edges"]
+  "required": ["record_id", "text", "outcome", "timestamp", "memory_kind", "evidence_count"]
 }

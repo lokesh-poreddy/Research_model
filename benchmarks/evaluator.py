@@ -33,11 +33,15 @@ TASKS = {
 class BenchmarkEvaluator:
     """
     Runs RDE-Bench tasks and collects comparative metrics.
-    
+
     Usage:
-        evaluator = BenchmarkEvaluator(tasks=["cifar10", "synthetic"])
+        evaluator = BenchmarkEvaluator(tasks=["digits", "synthetic"], n_seeds=5)
         report = evaluator.run(n_iterations=20)
         print(report)
+
+    v2: ``n_seeds`` controls how many independent seeds are run per task.
+    Results are aggregated (mean, std, min, max) for confidence intervals.
+    The v2 ablation protocol requires n_seeds ≥ 5 before promotion.
     """
 
     def __init__(
@@ -46,28 +50,43 @@ class BenchmarkEvaluator:
         n_iterations: int = 20,
         mock: bool = True,
         output_dir: str = "./benchmark_results",
+        n_seeds: int = 1,          # v2: ≥ 5 for promotion-eligible results
     ):
         self.task_names = tasks or list(TASKS.keys())
         self.n_iterations = n_iterations
         self.mock = mock
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.n_seeds = max(1, n_seeds)
 
     def run(self) -> Dict[str, Any]:
         all_results = {}
 
         for task_name in self.task_names:
-            logger.info("═══ Running task: %s ═══", task_name)
+            logger.info("═══ Running task: %s (×%d seeds) ═══", task_name, self.n_seeds)
             task_cls = TASKS.get(task_name)
             if task_cls is None:
                 logger.warning("Unknown task: %s", task_name)
                 continue
 
-            # Digits is bundled with scikit-learn and therefore provides the
-            # default real, network-free evaluation track.  Other task
-            # adapters retain their explicit mock/real configuration.
-            task = task_cls() if task_name == "digits" else task_cls(mock=self.mock)
-            result = self._run_single_task(task_name, task)
+            # Collect results across seeds
+            seed_results = []
+            for seed_idx in range(self.n_seeds):
+                import random
+                import numpy as np
+                random.seed(seed_idx)
+                np.random.seed(seed_idx)
+
+                task = task_cls() if task_name == "digits" else task_cls(mock=self.mock)
+                seed_result = self._run_single_task(task_name, task, seed=seed_idx)
+                seed_results.append(seed_result)
+                logger.info(
+                    "[%s] seed=%d best=%.4f",
+                    task_name, seed_idx, seed_result.get("best_score", 0.0)
+                )
+
+            # Aggregate across seeds
+            result = self._aggregate_seeds(seed_results)
             all_results[task_name] = result
 
         # Save report
@@ -78,7 +97,32 @@ class BenchmarkEvaluator:
         self._print_summary(all_results)
         return all_results
 
-    def _run_single_task(self, task_name: str, task: Any) -> Dict[str, Any]:
+    @staticmethod
+    def _aggregate_seeds(seed_results: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Aggregate per-seed metrics into mean ± std for the report."""
+        import statistics
+
+        if not seed_results:
+            return {}
+        # Use the first seed's non-numeric fields as base
+        aggregated = dict(seed_results[0])
+        numeric_keys = [
+            k for k, v in seed_results[0].items() if isinstance(v, (int, float))
+        ]
+        for key in numeric_keys:
+            vals = [r[key] for r in seed_results if key in r]
+            if len(vals) > 1:
+                aggregated[key] = statistics.mean(vals)
+                aggregated[f"{key}_std"] = statistics.stdev(vals)
+                aggregated[f"{key}_min"] = min(vals)
+                aggregated[f"{key}_max"] = max(vals)
+            else:
+                aggregated[key] = vals[0] if vals else 0.0
+        aggregated["n_seeds"] = len(seed_results)
+        return aggregated
+
+    def _run_single_task(self, task_name: str, task: Any, seed: int = 0) -> Dict[str, Any]:
+        """Run the controller on one task/seed combination."""
         # Setup RDG + Memory
         rdg = ResearchDevelopmentGraph(graph_id=task_name)
         memory = ECRMMemoryStore()
@@ -139,11 +183,15 @@ class BenchmarkEvaluator:
 
     def _print_summary(self, results: Dict[str, Any]) -> None:
         print("\n" + "═" * 60)
-        print("  RDE-Bench Results Summary")
+        print("  RDE-Bench Results Summary (v2)")
         print("═" * 60)
         for task, metrics in results.items():
-            print(f"\n  Task: {task}")
-            print(f"    Best Score:      {metrics.get('best_score', 0):.4f} "
+            n_seeds = metrics.get("n_seeds", 1)
+            best = metrics.get("best_score", 0)
+            best_std = metrics.get("best_score_std", 0.0)
+            print(f"\n  Task: {task}  (seeds={n_seeds})")
+            seed_str = f" ±{best_std:.4f}" if n_seeds > 1 else ""
+            print(f"    Best Score:      {best:.4f}{seed_str} "
                   f"(baseline={metrics.get('baseline_score', 0):.4f})")
             print(f"    Search Eff (SE): {metrics.get('search_efficiency', 0)} evaluations")
             print(f"    Fail Repeat (FRR):{metrics.get('failure_repetition_rate', 0):.3f}")
