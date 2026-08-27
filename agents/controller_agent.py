@@ -52,6 +52,7 @@ class ResearchController:
         max_experiments: int = 50,
         plateau_threshold: int = 5,
         use_mock_experiments: bool = True,
+        task: Optional[Any] = None,
     ):
         self.rdg = rdg
         self.memory = memory
@@ -59,6 +60,7 @@ class ResearchController:
         self.max_experiments = max_experiments
         self.plateau_threshold = plateau_threshold
         self.use_mock = use_mock_experiments
+        self.task = task
 
         # Agents
         self.hypothesis_agent = HypothesisAgent()
@@ -147,12 +149,19 @@ class ResearchController:
         result = self.experiment_agent.run(
             hypothesis=selected_hypothesis,
             genome=genome,
+            task_description=self.task.description() if self.task else "image classification",
             use_mock=self.use_mock,
+            task=self.task,
         )
+        # The comparison point is recorded with the episode so ECRM can keep
+        # only interventions that beat the state of knowledge at decision time.
+        result.setdefault("baseline", self.best_score)
         self.total_experiments += 1
 
         # Update experiment node status
-        exp_node.status = NodeStatus.COMPLETED if result["success"] else NodeStatus.FAILED
+        # Completion describes whether the evaluator executed; research
+        # success (meeting a target metric) is a separate outcome.
+        exp_node.status = NodeStatus.FAILED if result.get("error") else NodeStatus.COMPLETED
         exp_node.attributes.update(result)
         self.rdg.update_node(exp_node.id, status=exp_node.status)
 
@@ -178,9 +187,14 @@ class ResearchController:
         # ── 8. Failure diagnosis + repair ─────────────────────────────────────
         failure_cat = FailureCategory.UNKNOWN
         if not result["success"]:
+            # Diagnose the Experiment first so execution errors are not lost.
             failure_cat, bad_node = diagnose_failure(
-                self.rdg, finding_node, target_metric=self.best_score * 0.9
+                self.rdg, exp_node, target_metric=self.best_score * 0.9
             )
+            if failure_cat == FailureCategory.UNKNOWN:
+                failure_cat, bad_node = diagnose_failure(
+                    self.rdg, finding_node, target_metric=self.best_score * 0.9
+                )
             repair_msg = apply_repair(failure_cat, bad_node, self.rdg, self.memory)
             logger.info("Failure: %s | Repair: %s", failure_cat.value, repair_msg)
 
@@ -216,6 +230,10 @@ class ResearchController:
         from evolution.operators import OperatorType, apply_operator
         parent = self.population[0]  # start from base genome
         child = apply_operator(OperatorType.SYNTHESIS, parent)
+        # In the offline reference evaluator this represents the transition
+        # from local hyperparameter tuning to a new algorithm family.
+        child.data_settings["estimator"] = "svc"
+        child.strategy_description = "algorithm_discovery: SVC kernel search"
         return child
 
     def _summarize(self) -> Dict[str, Any]:

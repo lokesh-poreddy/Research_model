@@ -204,5 +204,31 @@ def demo() -> None:
     console.print("[green]✓ Demo complete![/green]")
 
 
+@cli.command("real-demo")
+@click.option("--iterations", default=6, show_default=True, help="Real train/evaluate iterations")
+def real_demo(iterations: int) -> None:
+    """Run a reproducible, network-free training demonstration on sklearn digits."""
+    from agents.controller_agent import ResearchController
+    from benchmarks.tasks import DigitsTask
+    from ecrm.memory_store import ECRMMemoryStore
+    from rdg.edges import EdgeRelation
+    from rdg.graph import ResearchDevelopmentGraph
+    from rdg.nodes import RDGNode
+
+    task = DigitsTask(seed=42)
+    rdg, memory = ResearchDevelopmentGraph(), ECRMMemoryStore()
+    problem = RDGNode.problem(task.description())
+    gap = RDGNode.gap("Gap: establish a reliable small-data classifier.")
+    rdg.add_node(problem)
+    rdg.add_node(gap)
+    rdg.connect(problem.id, gap.id, EdgeRelation.IDENTIFIES, validate=False)
+    result = ResearchController(rdg, memory, problem_description=task.description(),
+                                use_mock_experiments=False, task=task).run(iterations)
+    console.print(Panel(
+        f"Best validation accuracy: [bold green]{result['best_score']:.4f}[/bold green]\n"
+        f"Experiments: {result['total_experiments']} | Memory records: {result['memory_stats']['total_records']}",
+        title="Real offline training complete", border_style="green"))
+
+
 if __name__ == "__main__":
     cli()

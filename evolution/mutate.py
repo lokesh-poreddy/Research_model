@@ -66,6 +66,15 @@ def param_mutation(genome: ModelGenome, delta: float = 0.1) -> ModelGenome:
     elif param == "epochs":
         new_val = max(1, min(500, int(round(new_val))))
 
+    # Integer rounding can otherwise produce a no-op mutation (notably for
+    # epochs or batch size).  Evolution operators must always create a
+    # distinct candidate when a mutable parameter exists.
+    if new_val == val:
+        if param in ("batch_size", "epochs"):
+            new_val = int(min(512 if param == "batch_size" else 500, val + 1))
+        else:
+            new_val = float(val) * (1.0 + delta if val else delta)
+
     child.hyperparameters[param] = new_val
     child.strategy_description = (
         genome.strategy_description + f" | param_mut({param}: {val:.4g}→{new_val:.4g})"

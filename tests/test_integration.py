@@ -10,6 +10,7 @@ from rdg.nodes import RDGNode
 from rdg.edges import EdgeRelation
 from benchmarks.metrics import compute_all_metrics
 from failure.taxonomy import FailureCategory
+from benchmarks.tasks import DigitsTask
 
 
 class TestResearchLoop:
@@ -41,9 +42,11 @@ class TestResearchLoop:
         self.controller.run(n_iterations=3)
         assert len(self.rdg) > initial_size
 
-    def test_memory_accumulates_records(self):
+    def test_memory_retains_reusable_records_only(self):
         self.controller.run(n_iterations=3)
-        assert len(self.memory) >= 3
+        # ECRM retains improvements and diagnosed failures; neutral repeats do
+        # not pollute the long-lived store.
+        assert 0 < len(self.memory) <= 3
 
     def test_history_recorded(self):
         self.controller.run(n_iterations=5)
@@ -76,6 +79,24 @@ class TestBenchmarkMetrics:
         assert metrics["research_reliability_score"] == pytest.approx(0.5, abs=0.01)
         assert "research_efficiency" in metrics
         assert "search_efficiency" in metrics
+
+
+class TestRealOfflineTraining:
+    def test_digits_task_trains_and_evaluates(self):
+        task = DigitsTask(seed=4, n_train=100)
+        rdg, memory = ResearchDevelopmentGraph(), ECRMMemoryStore()
+        problem = RDGNode.problem(task.description())
+        gap = RDGNode.gap("Improve the baseline.")
+        rdg.add_node(problem)
+        rdg.add_node(gap)
+        rdg.connect(problem.id, gap.id, EdgeRelation.IDENTIFIES, validate=False)
+        controller = ResearchController(
+            rdg, memory, problem_description=task.description(),
+            use_mock_experiments=False, task=task,
+        )
+        summary = controller.run(n_iterations=2)
+        assert summary["best_score"] > 0.50
+        assert all("score" in step for step in controller.history)
 
 
 class TestFailureDiagnosis:

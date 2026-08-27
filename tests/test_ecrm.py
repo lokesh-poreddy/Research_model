@@ -5,6 +5,7 @@ import pytest
 from ecrm.memory_store import ECRMMemoryStore, MemoryRecord
 from ecrm.res_scorer import compute_res, memory_utility
 from ecrm.negative_transfer import NTRDetector
+from ecrm.embedder import cosine_similarity, embed_text
 
 
 class TestMemoryStore:
@@ -58,6 +59,22 @@ class TestMemoryStore:
         assert s["total_records"] == 2
         assert s["successful"] == 1
         assert s["failed"] == 1
+
+    def test_neutral_run_is_not_retained(self):
+        record = self.store.store(
+            "neutral repeated experiment", outcome={"score": 0.5, "success": True, "baseline": 0.5}
+        )
+        assert len(self.store) == 0
+        assert record.embedding is None
+
+    def test_hash_embedding_preserves_token_similarity(self):
+        related = cosine_similarity(
+            embed_text("digits SVC regularization"), embed_text("digits SVC tuning")
+        )
+        unrelated = cosine_similarity(
+            embed_text("digits SVC regularization"), embed_text("satellite segmentation transformer")
+        )
+        assert related > unrelated
 
     def test_save_load(self, tmp_path):
         self.store.store("test record", outcome={"score": 0.7, "success": True})

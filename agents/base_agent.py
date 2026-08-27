@@ -26,6 +26,9 @@ class BaseAgent:
     def _init_client(self) -> None:
         """Initialise LLM client based on settings."""
         if settings.llm_provider == "openai":
+            if not settings.openai_api_key:
+                logger.info("[%s] No OpenAI key configured; using deterministic offline mode.", self.name)
+                return
             try:
                 import openai  # type: ignore
                 self._client = openai.OpenAI(api_key=settings.openai_api_key)
@@ -34,6 +37,9 @@ class BaseAgent:
             except Exception as exc:
                 logger.warning("[%s] OpenAI unavailable: %s", self.name, exc)
         elif settings.llm_provider == "anthropic":
+            if not settings.anthropic_api_key:
+                logger.info("[%s] No Anthropic key configured; using deterministic offline mode.", self.name)
+                return
             try:
                 import anthropic  # type: ignore
                 self._client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
@@ -89,6 +95,18 @@ class BaseAgent:
 
     def _mock_llm(self, system: str, user: str) -> str:
         """Deterministic mock for offline testing."""
+        if self.name == "HypothesisAgent":
+            return json.dumps({
+                "hypothesis": "Test a regularized, context-aware model variant and compare it against the current baseline.",
+                "rationale": "A bounded intervention permits reproducible evidence and failure attribution.",
+            })
+        if self.name == "AnalyzerAgent":
+            return json.dumps({
+                "finding": "The experiment produced a measured validation outcome.",
+                "claim": "The intervention is retained only when its outcome is supported by the recorded experiment.",
+                "supports_hypothesis": True,
+                "failure_flags": ["None"],
+            })
         return (
             f"[MOCK RESPONSE from {self.name}]\n"
             f"System: {system[:100]}...\n"

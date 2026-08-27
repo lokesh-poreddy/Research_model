@@ -286,6 +286,24 @@ cp .env.example .env
 python main.py demo
 ```
 
+### 3a. Run real offline training (recommended first verification)
+
+This command does not download data or execute LLM-generated code. It trains
+and evaluates scikit-learn estimators on the bundled handwritten-digits data,
+using a separate validation and held-out test partition inside the task
+adapter.
+
+```bash
+python main.py real-demo --iterations 7
+```
+
+The reference run is deterministic (`seed=42`) and should reach a validation
+accuracy above 0.90 after the plateau-triggered SVC discovery branch. This is
+evidence that the experiment engine performs real `fit`/`predict` evaluation;
+it is not a claim that the framework has been fine-tuned on your future
+domain data. Add a task adapter for ECG, Sentinel, or CIFAR data before making
+domain-specific performance claims.
+
 ### 4. Start Research Loop
 
 ```bash
@@ -314,6 +332,19 @@ python main.py api --port 8000
 ```bash
 pytest tests/ -v
 ```
+
+## Memory retention policy
+
+ECRM is not an unrestricted experiment log. It retains only (1) a failed
+attempt and its diagnosis, or (2) a successful intervention that improves on
+the decision-time baseline. Neutral repetitions are discarded. This keeps
+retrieval focused on reusable positive and negative evidence, while the RDG
+remains the complete provenance record for every experiment.
+
+The default embedding path is a deterministic token-and-bigram hashing
+encoder, so offline runs never download a model. To use a locally provisioned
+sentence-transformer, set `RESEARCHFORGE_USE_LOCAL_ENCODER=1`; the same ECRM
+interface is preserved.
 
 ---
 

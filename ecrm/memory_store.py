@@ -135,10 +135,23 @@ class ECRMMemoryStore:
         domain: str = "",
         task_id: str = "",
         hypothesis_id: str = "",
+        force: bool = False,
     ) -> MemoryRecord:
-        """Embed and store a new memory record."""
+        """Embed and store a reusable research lesson.
+
+        ECRM is intentionally selective.  Routine neutral runs add noise and
+        increase harmful transfer, so they are not retained unless ``force``
+        is requested.  Failures and meaningful improvements are retained.
+        """
+        score = float(outcome.get("score", 0.0))
+        success = bool(outcome.get("success", False))
+        baseline = float(outcome.get("baseline", 0.0))
+        # A failed attempt is itself useful negative evidence, even when the
+        # evaluator has not supplied a more specific diagnosis yet.
+        has_failure = (not success) or bool(failure_flags) or bool(outcome.get("error"))
+        if not force and not has_failure and not (success and score > baseline):
+            return MemoryRecord(text=text, outcome=outcome, link_node=link_node)
         embedding = embed_text(text, model_name=self._embedding_model, dim=self._dim)
-        score = outcome.get("score", 0.0)
         record = MemoryRecord(
             text=text,
             embedding=embedding,

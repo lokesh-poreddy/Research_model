@@ -94,7 +94,9 @@ class AnalyzerAgent(BaseAgent):
         # Store in ECRM
         memory.store(
             text=hypothesis_node.content,
-            outcome={"score": score, "success": success},
+            outcome={"score": score, "success": success,
+                     "baseline": result.get("baseline", 0.0),
+                     "error": result.get("error", "")},
             link_node=hypothesis_node.id,
             failure_flags=failure_flags,
         )

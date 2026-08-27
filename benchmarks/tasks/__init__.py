@@ -3,3 +3,6 @@ from benchmarks.tasks.ecg_task import ECGTask
 from benchmarks.tasks.synthetic_task import SyntheticTimeSeriesTask
 
 __all__ = ["CIFAR10Task", "ECGTask", "SyntheticTimeSeriesTask"]
+from .digits_task import DigitsTask
+
+__all__ = ["DigitsTask"]

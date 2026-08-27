@@ -61,6 +61,7 @@ class ExperimentAgent(BaseAgent):
         genome: ModelGenome,
         task_description: str = "image classification",
         use_mock: bool = True,
+        task: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """
         Execute the experiment and return a result dict with:
@@ -74,8 +75,16 @@ class ExperimentAgent(BaseAgent):
         start = time.time()
         code = self.generate_code(hypothesis, genome, task_description)
 
-        if use_mock or self.sandbox_mode:
+        # ``sandbox_mode`` only controls whether generated code may be run in
+        # a subprocess.  It must not silently turn an explicitly requested
+        # real evaluation into a mock run.
+        if use_mock:
             result = self._mock_run(genome)
+        elif task is not None:
+            # Trusted task adapters own their data and evaluator.  This is the
+            # supported real-evaluation path; arbitrary LLM-generated code is
+            # never executed in the controller process.
+            result = self._task_run(task, genome)
         else:
             result = self._sandbox_run(code, genome)
 
@@ -87,6 +96,20 @@ class ExperimentAgent(BaseAgent):
             result.get("score", 0.0),
         )
         return result
+
+    @staticmethod
+    def _task_run(task: Any, genome: ModelGenome) -> Dict[str, Any]:
+        try:
+            result = dict(task.evaluate(genome.to_dict()))
+            score = float(result.get("score", 0.0))
+            result.setdefault("success", score >= float(getattr(task, "target_score", 0.0)))
+            result.setdefault("train_loss", 1.0 - float(result.get("train_score", score)))
+            result.setdefault("val_loss", 1.0 - score)
+            result.setdefault("error", "")
+            return result
+        except Exception as exc:
+            return {"success": False, "score": 0.0, "train_loss": 0.0,
+                    "val_loss": 0.0, "error": str(exc)}
 
     def _mock_run(self, genome: ModelGenome) -> Dict[str, Any]:
         """Simulated result for offline testing."""
