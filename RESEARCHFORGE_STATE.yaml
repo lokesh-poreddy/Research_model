@@ -24,7 +24,7 @@ baseline:
   description: >
     The verified reference baseline. All future benchmark deltas are measured
     against this state. Never overwrite or replace these results.
-  git_commit: UNTRACKED  # replace with `git rev-parse HEAD` after git init
+  git_commit: 5b5e388
   benchmark_run_id: RF0x-digits-3seeds-25gen-v1
   test_count: 17
   test_status: ALL_PASS
@@ -526,7 +526,7 @@ releases:
   - version: RF-1.0.0-alpha.1
     date: 2026-09
     status: VERIFIED
-    git_commit: UNTRACKED
+    git_commit: 5b5e388
     total_tests: 77  # 17 + 30 + 22 + 8
     summary: >
       Infrastructure release. Adds adapter layer (GraphBackend + VectorIndexBackend
