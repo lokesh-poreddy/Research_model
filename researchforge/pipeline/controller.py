@@ -6,6 +6,17 @@ diagrams:
     select branch -> synthesize genome -> run experiment -> diagnose
     -> update memory -> update policy -> repeat
 
+RF-1.0.0-alpha.2 additions
+--------------------------
+The controller now accepts an optional ``rsg`` (ResearchSystemGenome) parameter.
+
+Backward compatibility invariant (AD-013):
+    rsg=None → EXACTLY the same execution as RF-1.0-alpha.1.
+    No code path is altered; the rsg is stored only for provenance.
+    rsg=RSG.default(condition) must produce a bitwise-identical trajectory
+    (same seed → same trial sequence, same metrics, same trajectory hash).
+    This is tested in test_genomes.py::test_rsg_none_behavioral_equivalence.
+
 Four `condition`s implement the RDE-Bench ablation ladder:
 
   - "full":              policy learner (bandit) + flat ECRM (memory.ecrm) +
@@ -32,7 +43,7 @@ from __future__ import annotations
 import random
 import time
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..rdg.graph import ResearchDevelopmentGraph
 from ..genome.model_genome import ModelGenome
@@ -74,12 +85,27 @@ class RunResult:
     memory_half_life_days: float = float("nan")
     trajectory_stats: Dict[str, int] = field(default_factory=dict)
     wall_time_s: float = 0.0
+    rsg_id: Optional[str] = None  # RF-1.0.0-alpha.2: set if RSG was provided
 
 
 class ResearchController:
     def __init__(self, task: Task, condition: str = "full", seed: int = 0,
                  population_size: int = 6, initial_model_type: str = "LogisticRegression",
-                 use_sandbox: bool = False, sandbox_timeout_s: float = 15.0):
+                 use_sandbox: bool = False, sandbox_timeout_s: float = 15.0,
+                 rsg: Optional[Any] = None):
+        """Initialise the ResearchController.
+
+        Parameters
+        ----------
+        rsg : ResearchSystemGenome | None
+            Optional Research System Genome. When None (default), the controller
+            uses exactly the same execution path as RF-1.0-alpha.1 — this is
+            the backward compatibility guarantee (AD-013).
+            When an RSG is provided, it is stored as self.rsg for provenance
+            tracking (RunResult.rsg_id) but does NOT change any execution
+            behaviour in alpha.2. Full RSG-driven execution wiring is
+            scheduled for RF-1.0.0-alpha.3 (VRDEG integration).
+        """
         if condition not in CONDITIONS:
             raise ValueError(f"condition must be one of {CONDITIONS}")
         self.task = task
@@ -104,6 +130,11 @@ class ResearchController:
         if use_sandbox:
             from ..safety.sandbox import SafeRunner, ResourceBudget
             self._sandbox = SafeRunner(ResourceBudget(per_experiment_timeout_s=sandbox_timeout_s))
+
+        # RSG provenance (RF-1.0.0-alpha.2)
+        # Stored for RunResult.rsg_id; does NOT alter execution in alpha.2.
+        # Full RSG-driven wiring is scheduled for alpha.3 (VRDEG integration).
+        self.rsg = rsg
 
         self.problem = self.rdg.add_node(
             "Problem", f"Improve {task.metric_fn.__name__} on {task.name}")
@@ -319,4 +350,5 @@ class ResearchController:
         result.trajectory_stats = (
             self.trajectory_memory.stats() if self.use_trajectory_memory else {})
         result.wall_time_s = time.time() - t0
+        result.rsg_id = self.rsg.rsg_id if self.rsg is not None else None
         return result

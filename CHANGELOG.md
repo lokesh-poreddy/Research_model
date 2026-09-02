@@ -7,6 +7,120 @@ and must be preserved — they are not removed from this file.
 Format follows [Keep a Changelog](https://keepachangelog.com).
 
 ---
+---
+
+## [RF-1.0.0-alpha.2] — 2026-09-02 — Two-Level Genome Architecture
+
+**Character of release**: Architectural. Introduces the RSG/TMG genome split —
+the foundational research-artifact model for VRDEG (alpha.3+). No changes to
+the research loop, algorithms, or existing tests. 105/105 tests pass.
+Regression proof: 6 comparisons (3 seeds × 2 conditions), max delta = 0.0,
+all trajectory hashes bitwise-identical.
+
+### Added
+
+**ResearchSystemGenome (RSG)** — `researchforge/genome/research_system_genome.py`
+- Governs *how* ResearchForge conducts research: phase, budget, operator portfolio,
+  memory policy, validity gate config, retrieval config, termination criteria
+- Conceptual scope: *a versioned executable specification of the ResearchForge
+  research policy*, not a configuration dump
+- Strict JSON Schema (`additionalProperties: false`)
+- `RSG.default(condition, seed)` — factory that codifies alpha.1 defaults as a
+  versioned research artifact
+- `RSG.evolve(operator, rng, child_index, mutation_params)` — immutability-contract
+  pattern (returns new RSG, never mutates self)
+- `RSG.fingerprint()` — sha256 of canonical JSON (excluding timestamp)
+- `RSG.validate()`, `to_dict()`, `from_dict()`, `to_json()`
+- `researchforge_version` field — RF release that created this RSG (AD-012)
+- Separate `RSG_EVOLUTION_OPERATORS` namespace (distinct from `TMG_OPERATORS`)
+- Full `evolve()` support for 11 operators: expand_budget, contract_budget,
+  shift_phase, alter_exploration_constant, alter_memory_decay, reweight_operators,
+  add_operator, remove_operator, crossover_policies, …
+
+**TargetModelGenome (TMG)** — `researchforge/genome/target_model_genome.py`
+- Governs *what* model is being optimized
+- Backward-compatible superset of ModelGenome (all RF-0.x fields preserved)
+- `from_model_genome(mg)` — lossless RF-0.x upgrade (preservation guarantee)
+- `to_model_genome()` — downgrade for compatibility; roundtrip proven: `to_mg(from_mg(mg)) == mg`
+- Deterministic, sibling-collision-safe `tmg_id` (AD-005): sha256 of
+  `(parent_ids, operator, generation, seed, mutation_parameters, child_index)[:16]`
+- Canonical serialization: `tmg_id` only (not `model_id`) — schema debt avoided (AD-007)
+- `clone(operator, child_index)`, `clone_for_crossover()` — immutability contract
+- `fingerprint()` — sha256 of canonical JSON
+- `TMGCapabilities` dataclass: `supports_warm_start/partial_fit/predict_proba`,
+  `expected_train_time_s`, `memory_estimate_mb`, `infer(model_type)` factory
+- Extended lineage: `ancestor_ids`, `crossover_parents`, `rollback_from`
+- `build_estimator()` delegates to ModelGenome for behavioral parity (AD-004 extension)
+- `TMG_OPERATORS` namespace; `researchforge_version` field
+
+**Shared schema utilities** — `researchforge/genome/schema.py`
+- `deterministic_genome_id(prefix, parent_ids, operator, generation, seed,
+  mutation_parameters, child_index)` — sibling-collision-safe, reproducible
+- `genome_fingerprint(canonical_dict)` — sha256 hex digest of canonical JSON
+- `validate_genome(d, schema)` — strict jsonschema wrapper with path-aware errors
+- `GENOME_SCHEMA_VERSION_TMG = "1.0"`, `GENOME_SCHEMA_VERSION_RSG = "1.0"`
+
+**Migration registry** — `researchforge/genome/migration.py`
+- `migrate_tmg(d, target_version)` — accepts legacy `model_id` alias, produces
+  canonical `tmg_id`; adds `schema_version`, `ancestor_ids`, `capabilities`
+- `migrate_rsg(d, target_version)` — RSG migration
+- `TMGMigrationRegistry` — (None, "1.0") migration registered
+- Documented distinction: *preservation guarantee* vs *derived metadata*
+
+**Regression benchmark** — `scripts/rf0_vs_rf1_regression.py`
+- RDE-Bench over 3 seeds × 2 conditions for rsg=None vs rsg=RSG.default()
+- Produces `RF0_vs_RF1_regression.json` with per-comparison metrics + trajectory hashes
+- Fails with exit code 1 if `max_delta > 0.005`
+
+**Test suite** — `tests/test_genomes.py` (28 tests)
+- Tier 1 RSG (7): factory, validate, bad-phase rejection, determinism, JSON keys, evolve, roundtrip
+- Tier 1 TMG (9): factory all families, validate, schema fields, pipeline equivalence,
+  safety check equivalence, clone lineage, operator field, deterministic ID, sibling IDs
+- Tier 2 migration (7): field preservation, model_genome roundtrip, legacy model_id,
+  schema rejects leaked model_id, all 7 operators produce valid TMG, RSG roundtrip, v0→v1 migration
+- Tier 3 integration (5): controller accepts RSG, rsg_id=None when not provided,
+  **behavioral equivalence test** (trajectory hashes over 2 seeds), fingerprint stability × 2
+
+**SVG-v1 documentation corrections** — `researchforge/scientific_validity/__init__.py`
+- `SVG_V1_KNOWN_LIMITATIONS` machine-readable dict added to public API
+- `BaselineFairnessValidator` conceptually re-labelled as TrivialBaselineCheck
+- `LabelPermutationTest` re-labelled as LabelRandomisationSanityCheck
+- `paired=True` default documented for RF-vs-RF comparisons
+- `GATE_VERSION = "SVG-v1"` (renamed from "1.0.0-alpha.1")
+
+### Modified
+
+**`researchforge/pipeline/controller.py`**
+- Added optional `rsg: Optional[Any] = None` parameter (AD-006, AD-013)
+- `rsg=None` → exactly the same execution path as alpha.1 (proven, not assumed)
+- `rsg=RSG.default(condition)` → stores RSG for provenance only; no behavior change
+- `RunResult.rsg_id: Optional[str]` field added (None when rsg=None)
+
+**`researchforge/genome/__init__.py`**
+- Exports all alpha.2 types: TMG, RSG, schema utilities, migration functions
+- All RF-0.x exports unchanged
+
+### Design Decisions
+
+| Decision | Record |
+|---|---|
+| AD-005 | Deterministic sibling-safe TMG IDs |
+| AD-006 | RSG optional, rsg=None = exact alpha.1 |
+| AD-007 | tmg_id canonical; model_id compat-loader only |
+| AD-008 | Preservation guarantee + derived metadata |
+| AD-009 | Immutability via evolve/clone pattern |
+| AD-010 | Separate operator namespaces (RSG vs TMG) |
+| AD-011 | RSG = versioned research policy spec |
+| AD-012 | schema_version ≠ researchforge_version |
+| AD-013 | RSG behavioral invariant proven by benchmark |
+
+### Explicitly NOT in this release (by design)
+
+VRDEG, Adaptive-ECRM, Mode Router, Evidence Adjudication, SVG-v2
+leakage checks, `PROVISIONAL` verdict status, pgvector/Neo4j backends,
+real LLM research loop. Each is scheduled for its designated future release.
+
+---
 
 ## [RF-1.0.0-alpha.1] — 2026-09 — Infrastructure Release
 

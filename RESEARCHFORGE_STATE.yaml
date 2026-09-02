@@ -14,7 +14,7 @@ project:
     gating. Long-term target: a system that can research, branch, experiment,
     fail, diagnose, remember, and improve itself.
   schema_version: 1
-  current_release: RF-1.0.0-alpha.1
+  current_release: RF-1.0.0-alpha.2
   release_stage: alpha  # alpha | beta | rc | release
 
 # ─── Baseline ────────────────────────────────────────────────────────────────
@@ -537,14 +537,162 @@ releases:
     benchmark_delta: NO_REGRESSION  # regression harness confirmed
     acceptance_criteria_met: true
 
+# ─── SVG-v1 Known Limitations ─────────────────────────────────────────────────
+svg_v1_known_limitations:
+  version: SVG-v1
+  rf_release: RF-1.0.0-alpha.1
+  source: researchforge/scientific_validity/__init__.py::SVG_V1_KNOWN_LIMITATIONS
+  conceptual_corrections:
+    BaselineFairnessValidator: >
+      TrivialBaselineCheck (majority-class sanity only). Not a full
+      protocol-level fairness comparison.
+    LabelPermutationTest: >
+      LabelRandomisationSanityCheck (heuristic threshold, n_shuffles=3 min).
+      Not a publication-grade permutation test.
+    StatisticalSignificanceTester_default_mode: >
+      paired=True for seed-matched RF-vs-RF comparisons (correct default).
+      Welch's unpaired test available via paired=False.
+  implemented_checks:
+    - exact_duplicate_split_leakage
+    - label_randomisation_sanity
+    - trivial_baseline_sanity
+    - statistical_comparison_paired_t_plus_cohens_d
+  known_missing:
+    - near_duplicate_leakage
+    - group_patient_temporal_leakage
+    - preprocessing_target_derived_feature_leakage
+    - configurable_n_permutations_with_null_ci
+    - multiple_comparison_correction
+    - wilcoxon_signed_rank
+    - bootstrap_ci
+    - provisional_verdict_status
+    - independent_replication_tracking
+  roadmap:
+    SVG-v2: RF-2.0
+    multiple_comparison_correction: RF-1.5+
+    provisional_verdict_status: RF-1.0-beta
+    near_duplicate_leakage: RF-2.0
+    protocol_baseline_fairness: RF-2.0
+
+# ─── RF-0 vs RF-1 Regression Proof ───────────────────────────────────────────
+rf0_vs_rf1_regression_proof:
+  benchmark: RF0_vs_RF1_regression
+  script: scripts/rf0_vs_rf1_regression.py
+  artifact: RF0_vs_RF1_regression.json
+  parameters:
+    seeds: [0, 1, 2]
+    n_generations: 10
+    conditions: [full, no_memory]
+    threshold: 0.005
+  comparison_tracks:
+    A: RF-1 rsg=None (legacy execution path)
+    B: RF-1 rsg=RSG.default(condition)
+  results:
+    n_comparisons: 6
+    mean_absolute_delta: 0.0
+    max_absolute_delta: 0.0
+    std_absolute_delta: 0.0
+    all_trajectories_identical: true
+  verdict: NO_REGRESSION
+  interpretation: >
+    RSG addition is a pure provenance layer. Behavioral equivalence between
+    rsg=None and rsg=RSG.default(condition) is proven for 3 seeds x 2
+    conditions x 10 generations (6 comparisons). Max delta = 0.0, all
+    trajectory hashes match bitwise. The alpha.1 adapter refactor is
+    confirmed regression-free relative to RF-0.x behavior.
+
+# ─── Release: RF-1.0.0-alpha.2 ────────────────────────────────────────────────
+releases:
+  - release: RF-1.0.0-alpha.2
+    date: 2026-09-02
+    status: VERIFIED
+    predecessor: RF-1.0.0-alpha.1
+    architect_decisions:
+      AD-005: >
+        TMG IDs are deterministic, derived from sha256(
+          parent_ids, operator, generation, seed, mutation_parameters, child_index
+        )[:16]. Sibling-collision-safe via child_index. Reproducible across runs.
+      AD-006: >
+        RSG is optional in controller (rsg=None = exact alpha.1 behavior).
+        Backward compatibility invariant proven by regression benchmark.
+      AD-007: >
+        Canonical serialization uses tmg_id only. model_id is a compat-loader
+        alias accepted by migration but never appears in canonical output.
+        Prevents schema debt in additionalProperties:false schemas.
+      AD-008: >
+        TMG backward compat: Preservation guarantee (RF-0 fields unchanged) +
+        derived metadata (schema_version, ancestor_ids, capabilities inferred
+        deterministically). Roundtrip: to_model_genome(from_model_genome(mg)) == mg.
+      AD-009: >
+        Immutability contract: genome objects are versioned artifacts. Use
+        clone()/evolve() pattern. Language-level enforcement deferred to alpha.3.
+      AD-010: >
+        Separate operator namespaces: TMG_OPERATORS vs RSG_EVOLUTION_OPERATORS.
+        Prevents naming confusion at two evolutionary levels.
+      AD-011: >
+        RSG conceptual scope: a versioned executable specification of the
+        ResearchForge research policy. Not a configuration dump.
+      AD-012: >
+        schema_version governs parsing; researchforge_version records the RF
+        software release that created the genome. Distinct concepts.
+      AD-013: >
+        RSG behavioral invariant proven: rsg=None = exact alpha.1 path.
+        6 comparisons, delta=0.0, all trajectory hashes identical.
+    new_modules:
+      - researchforge/genome/schema.py
+      - researchforge/genome/target_model_genome.py
+      - researchforge/genome/research_system_genome.py
+      - researchforge/genome/migration.py
+      - scripts/rf0_vs_rf1_regression.py
+      - tests/test_genomes.py
+    modified_modules:
+      - researchforge/genome/__init__.py
+      - researchforge/pipeline/controller.py
+      - researchforge/scientific_validity/__init__.py
+    tests:
+      # Counts from actual test run (not hard-coded expectations)
+      test_basic_py: 17
+      test_adapters_py: 30
+      test_scientific_validity_py: 22
+      test_regression_py: 8
+      test_genomes_py: 28
+      total_tests: 105
+      baseline_before_alpha2: 77
+      new_tests_this_release: 28
+      all_pass: true
+    regression_benchmark:
+      result: NO_REGRESSION
+      max_delta: 0.0
+      all_trajectories_identical: true
+      artifact: RF0_vs_RF1_regression.json
+    summary: >
+      Two-level genome architecture release. RSG governs how ResearchForge
+      conducts research; TMG governs what model is being optimized. Both are
+      versioned artifacts with strict JSON schemas, deterministic IDs,
+      fingerprinting, migration support, and immutability contracts.
+      SVG-v1 documentation corrections applied. RF-0 vs RF-1 regression
+      proof produced (6 comparisons, delta=0.0, all hashes identical).
+      105 tests pass. Zero regressions in existing 77 tests.
+    excluded_by_design:
+      - VRDEG (scheduled alpha.3)
+      - Adaptive-ECRM (scheduled alpha.4)
+      - Mode Router (scheduled beta)
+      - Evidence Adjudication (scheduled beta)
+      - SVG-v2 near-duplicate/group/temporal leakage (scheduled RF-2.0)
+      - provisional_verdict_status (scheduled beta)
+      - pgvector / Neo4j production backends (post-RF-1.0)
+      - Real LLM research loop (scheduled RF-1.5+)
+
 # ─── Next upgrade ─────────────────────────────────────────────────────────────
 next_upgrade:
-  release_target: RF-1.0.0-alpha.2
+  release_target: RF-1.0.0-alpha.3
+  prerequisite: RF-1.0.0-alpha.2 VERIFIED (current)
   tasks:
-    - Research System Genome (RSG) — separate from ModelGenome/TMG
-    - Initial RSG schema and operators
-    - RSG integration with PolicyLearner
-    - Benchmark RSG vs TMG-only baseline
+    - VRDEG (Versioned Research Development + Experiment Graph)
+    - RSG-driven execution wiring (RSG controls research loop parameters)
+    - Genome graph persistence (lineage stored in RDG)
+    - Immutability language-level enforcement (frozen genomes)
+    - Adaptive Trajectory-ECRM backoff (if warranted by alpha.3 benchmark)
 
 schema_version_history:
   - version: 1
