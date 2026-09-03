@@ -45,6 +45,9 @@ from researchforge.genome.schema import (
 )
 from researchforge.genome.migration import migrate_tmg, migrate_rsg
 from researchforge.genome.operators import STRATEGIES
+from researchforge.genome.research_system_genome import (
+    ExecutionConfig, OperatorConfig, TerminationConfig,
+)
 
 PASS: List[str] = []
 FAIL: List[str] = []
@@ -98,7 +101,7 @@ def test_rsg_default_factory_all_conditions():
     for cond in ("full", "trajectory_memory", "no_memory", "random"):
         rsg = ResearchSystemGenome.default(condition=cond, seed=0)
         assert rsg.schema_version == "1.0", f"{cond}: bad schema_version"
-        assert rsg.researchforge_version == "RF-1.0.0-alpha.2", f"{cond}: bad rf_version"
+        assert rsg.researchforge_version == "RF-1.0.0-alpha.2.1", f"{cond}: bad rf_version"
         assert rsg.operator == "init", f"{cond}: bad operator"
         assert rsg.generation == 0, f"{cond}: generation != 0"
         assert rsg.allowed_operators, f"{cond}: empty operator portfolio"
@@ -477,6 +480,102 @@ def test_tmg_fingerprint_stable():
     tmg2 = TargetModelGenome.default("RandomForestClassifier", seed=0)
     assert tmg1.fingerprint() == tmg2.fingerprint(), \
         "TMG fingerprint is not stable across equivalent genomes"
+
+
+# =========================================================================== #
+# Tier 1 (alpha.2.1) — ExecutionConfig / OperatorConfig / TerminationConfig   #
+# =========================================================================== #
+
+def test_execution_config_is_separate_from_validity_config():
+    """ExecutionConfig must be present and NOT contain scientific parameters.
+
+    The architectural invariant: resource/sandbox policy (ExecutionConfig)
+    is explicitly separate from scientific validity policy (ValidityConfig).
+    Conflating these would allow RSG evolution to silently change the scientific
+    evaluation protocol via a 'resource' config change.
+    """
+    rsg = ResearchSystemGenome.default(condition="full", seed=0)
+    # ExecutionConfig must exist and have expected mode
+    assert hasattr(rsg, "execution_config"), "RSG missing execution_config"
+    ec = rsg.execution_config
+    assert ec.execution_mode == "trusted_offline", (
+        f"Default execution_mode should be 'trusted_offline', got {ec.execution_mode!r}"
+    )
+    # ExecutionConfig must NOT have scientific validity fields
+    ec_dict = ec.to_dict()
+    for bad_field in ("n_permutations", "significance_alpha", "paired", "min_gap"):
+        assert bad_field not in ec_dict, (
+            f"Scientific validity field '{bad_field}' found in ExecutionConfig — "
+            "architectural boundary violation"
+        )
+    # ValidityConfig must NOT have resource fields
+    vc_dict = rsg.validity_config.to_dict()
+    for bad_field in ("execution_mode", "per_experiment_timeout_s",
+                      "max_total_experiments", "max_wall_time_s"):
+        assert bad_field not in vc_dict, (
+            f"Resource field '{bad_field}' found in ValidityConfig — "
+            "architectural boundary violation"
+        )
+
+
+def test_execution_config_invalid_mode_raises():
+    """ExecutionConfig rejects invalid execution_mode at construction time."""
+    try:
+        ExecutionConfig(execution_mode="bypass_all_safety")
+        raise AssertionError("Should have raised ValueError for invalid execution_mode")
+    except ValueError as e:
+        assert "bypass_all_safety" in str(e)
+
+
+def test_operator_config_defaults():
+    """OperatorConfig has correct UCB exploration constant default."""
+    rsg = ResearchSystemGenome.default(condition="full", seed=0)
+    assert hasattr(rsg, "operator_config"), "RSG missing operator_config"
+    oc = rsg.operator_config
+    import math
+    # sqrt(2) ≈ 1.41: the default UCB exploration constant
+    assert abs(oc.exploration_constant - math.sqrt(2)) < 0.02, (
+        f"exploration_constant {oc.exploration_constant!r} not close to sqrt(2)"
+    )
+    assert oc.min_portfolio_size >= 2, "Portfolio safety floor must be >= 2 operators"
+
+
+def test_termination_config_defaults():
+    """TerminationConfig encodes the plateau_patience previously hardcoded in controller."""
+    rsg = ResearchSystemGenome.default(condition="full", seed=0)
+    assert hasattr(rsg, "termination_config"), "RSG missing termination_config"
+    tc = rsg.termination_config
+    assert tc.plateau_patience == 8, (
+        f"plateau_patience={tc.plateau_patience!r}, expected 8 (RF-0.x hardcoded default)"
+    )
+    assert tc.min_generations >= 1
+
+
+def test_new_configs_round_trip_through_rsg_serialization():
+    """ExecutionConfig, OperatorConfig, TerminationConfig survive RSG to_dict/from_dict."""
+    rsg = ResearchSystemGenome.default(condition="full", seed=7)
+    # Customize the new configs
+    rsg.execution_config.per_experiment_timeout_s = 42.0
+    rsg.operator_config.exploration_constant = 2.0
+    rsg.termination_config.plateau_patience = 12
+
+    d = rsg.to_dict()
+    restored = ResearchSystemGenome.from_dict(d)
+
+    assert restored.execution_config.per_experiment_timeout_s == 42.0, (
+        "execution_config.per_experiment_timeout_s not preserved through serialization"
+    )
+    assert restored.operator_config.exploration_constant == 2.0, (
+        "operator_config.exploration_constant not preserved through serialization"
+    )
+    assert restored.termination_config.plateau_patience == 12, (
+        "termination_config.plateau_patience not preserved through serialization"
+    )
+    # Fingerprint must also be stable after roundtrip
+    assert restored.fingerprint() == rsg.fingerprint(), (
+        "RSG fingerprint changed after to_dict/from_dict roundtrip "
+        "(new sub-configs may not be included in canonical_dict)"
+    )
 
 
 # =========================================================================== #

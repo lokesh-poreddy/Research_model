@@ -113,6 +113,9 @@ GENOME_SCHEMA_RSG: Dict[str, Any] = {
         "memory_config": {"type": "object"},
         "validity_config": {"type": "object"},
         "retrieval_config": {"type": "object"},
+        "execution_config": {"type": "object"},
+        "operator_config": {"type": "object"},
+        "termination_config": {"type": "object"},
     },
 }
 
@@ -219,6 +222,113 @@ class ResearchRetrievalConfig:
         )
 
 
+
+@dataclass
+class ExecutionConfig:
+    """Execution resource and sandbox sub-configuration for an RSG.
+
+    IMPORTANT: This is explicitly SEPARATE from ResearchValidityConfig.
+    ValidityConfig contains scientific parameters (n_permutations, alpha).
+    ExecutionConfig contains resource/sandbox policy.
+    These are different concerns and must never be conflated.
+
+    execution_mode : "trusted_offline" | "sandboxed"
+        trusted_offline — runs directly in the calling process without the
+            subprocess sandbox. Chosen for development/testing environments
+            where the operator explicitly trusts the execution context.
+            NOTE: trusted_offline does NOT skip:
+                - tmg.safety_check() (genome-level sanity)
+                - schema validation of all inputs/outputs
+                - provenance capture (ExperimentRun record)
+                - result validation
+            Only the subprocess isolation (kill-switch) is omitted.
+        sandboxed — runs in a forked subprocess with hard wall-clock timeout
+            and process kill. Required for untrusted code or production.
+    """
+    execution_mode: str = "trusted_offline"   # "trusted_offline" | "sandboxed"
+    per_experiment_timeout_s: float = 20.0
+    max_total_experiments: int = 200
+    max_wall_time_s: float = 3600.0
+    # Future: cgroup limits, GPU quota, network policy, filesystem confinement
+
+    _VALID_MODES = frozenset(["trusted_offline", "sandboxed"])
+
+    def __post_init__(self) -> None:
+        if self.execution_mode not in self._VALID_MODES:
+            raise ValueError(
+                f"execution_mode must be one of {sorted(self._VALID_MODES)}, "
+                f"got {self.execution_mode!r}"
+            )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "execution_mode": self.execution_mode,
+            "per_experiment_timeout_s": self.per_experiment_timeout_s,
+            "max_total_experiments": self.max_total_experiments,
+            "max_wall_time_s": self.max_wall_time_s,
+        }
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "ExecutionConfig":
+        return cls(
+            execution_mode=d.get("execution_mode", "trusted_offline"),
+            per_experiment_timeout_s=float(d.get("per_experiment_timeout_s", 20.0)),
+            max_total_experiments=int(d.get("max_total_experiments", 200)),
+            max_wall_time_s=float(d.get("max_wall_time_s", 3600.0)),
+        )
+
+
+@dataclass
+class OperatorConfig:
+    """TMG operator portfolio sub-configuration for an RSG.
+
+    Controls which operators are currently active and their relative weights.
+    Separate from the RSG-level allowed_operators list (which is the canonical
+    source); this config holds derived metadata about the portfolio.
+    """
+    exploration_constant: float = 1.41   # UCB exploration constant (sqrt(2) default)
+    min_portfolio_size: int = 2          # safety floor: always keep >=2 operators
+    max_portfolio_size: int = 10         # ceiling on active operators
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "exploration_constant": self.exploration_constant,
+            "min_portfolio_size": self.min_portfolio_size,
+            "max_portfolio_size": self.max_portfolio_size,
+        }
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "OperatorConfig":
+        return cls(
+            exploration_constant=float(d.get("exploration_constant", 1.41)),
+            min_portfolio_size=int(d.get("min_portfolio_size", 2)),
+            max_portfolio_size=int(d.get("max_portfolio_size", 10)),
+        )
+
+
+@dataclass
+class TerminationConfig:
+    """Termination criteria sub-configuration for an RSG."""
+    plateau_patience: int = 8       # generations with no improvement before stopping
+    target_metric: Optional[float] = None  # stop if this metric is reached
+    min_generations: int = 3        # never stop before this many generations
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "plateau_patience": self.plateau_patience,
+            "target_metric": self.target_metric,
+            "min_generations": self.min_generations,
+        }
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "TerminationConfig":
+        return cls(
+            plateau_patience=int(d.get("plateau_patience", 8)),
+            target_metric=d.get("target_metric"),
+            min_generations=int(d.get("min_generations", 3)),
+        )
+
+
 # --------------------------------------------------------------------------- #
 # ResearchSystemGenome                                                         #
 # --------------------------------------------------------------------------- #
@@ -242,9 +352,13 @@ class ResearchSystemGenome:
     memory_config: ResearchMemoryConfig
     validity_config: ResearchValidityConfig
     retrieval_config: ResearchRetrievalConfig
+    execution_config: ExecutionConfig               # NEW alpha.2.1: resource/sandbox policy
+    operator_config: OperatorConfig                 # NEW alpha.2.1: portfolio metadata
+    termination_config: TerminationConfig           # NEW alpha.2.1: termination criteria
 
     hypothesis_budget: int = 3
     experiment_budget_per_hypothesis: int = 5
+    # plateau_patience moved to termination_config; kept here for backward compat
     plateau_patience: int = 8
     target_metric: Optional[float] = None
 
@@ -258,7 +372,7 @@ class ResearchSystemGenome:
     seed: int = 0
 
     # RF software version that created this RSG (AD-012)
-    researchforge_version: str = "RF-1.0.0-alpha.2"
+    researchforge_version: str = "RF-1.0.0-alpha.2.1"
 
     # ------------------------------------------------------------------ #
     # Factories                                                            #
@@ -310,6 +424,9 @@ class ResearchSystemGenome:
             memory_config=memory_config,
             validity_config=ResearchValidityConfig(),
             retrieval_config=ResearchRetrievalConfig(),
+            execution_config=ExecutionConfig(),
+            operator_config=OperatorConfig(),
+            termination_config=TerminationConfig(),
         )
 
     @classmethod
@@ -338,6 +455,9 @@ class ResearchSystemGenome:
             memory_config=ResearchMemoryConfig.from_dict(d.get("memory_config", {})),
             validity_config=ResearchValidityConfig.from_dict(d.get("validity_config", {})),
             retrieval_config=ResearchRetrievalConfig.from_dict(d.get("retrieval_config", {})),
+            execution_config=ExecutionConfig.from_dict(d.get("execution_config", {})),
+            operator_config=OperatorConfig.from_dict(d.get("operator_config", {})),
+            termination_config=TerminationConfig.from_dict(d.get("termination_config", {})),
         )
 
     # ------------------------------------------------------------------ #
@@ -364,6 +484,9 @@ class ResearchSystemGenome:
             "memory_config": self.memory_config.to_dict(),
             "validity_config": self.validity_config.to_dict(),
             "retrieval_config": self.retrieval_config.to_dict(),
+            "execution_config": self.execution_config.to_dict(),
+            "operator_config": self.operator_config.to_dict(),
+            "termination_config": self.termination_config.to_dict(),
         }
 
     def canonical_dict(self) -> Dict[str, Any]:

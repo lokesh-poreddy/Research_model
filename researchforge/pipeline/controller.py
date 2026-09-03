@@ -6,16 +6,27 @@ diagrams:
     select branch -> synthesize genome -> run experiment -> diagnose
     -> update memory -> update policy -> repeat
 
-RF-1.0.0-alpha.2 additions
---------------------------
-The controller now accepts an optional ``rsg`` (ResearchSystemGenome) parameter.
+RF-1.0.0-alpha.2.1 additions
+------------------------------
+The controller now uses TargetModelGenome (TMG) as the evolutionary object.
+The population is List[TargetModelGenome]. Evaluators receive .to_model_genome()
+for backward compatibility with sklearn_evaluator and capacity_bucket.
+
+RSG wiring (alpha.2.1 — low-risk parameters only):
+  - memory_config.decay_lambda, retention_threshold → ECRM initialization
+  - execution_config.per_experiment_timeout_s → sandbox timeout
+  - execution_config.execution_mode → use_sandbox determination
+
+NOT wired in alpha.2.1 (requires ExperimentSpec fingerprinting first):
+  - validity_config.n_permutations, significance_alpha (alpha.3)
 
 Backward compatibility invariant (AD-013):
     rsg=None → EXACTLY the same execution as RF-1.0-alpha.1.
     No code path is altered; the rsg is stored only for provenance.
     rsg=RSG.default(condition) must produce a bitwise-identical trajectory
     (same seed → same trial sequence, same metrics, same trajectory hash).
-    This is tested in test_genomes.py::test_rsg_none_behavioral_equivalence.
+    This is tested in test_genomes.py::test_rsg_none_behavioral_equivalence
+    AND in the regression benchmark after the alpha.2.1 TMG migration.
 
 Four `condition`s implement the RDE-Bench ablation ladder:
 
@@ -23,21 +34,10 @@ Four `condition`s implement the RDE-Bench ablation ladder:
                           a strategy/model-family-conditioned failure check
                           -- the original complete system (Sec. 6/8).
   - "trajectory_memory":  policy learner + memory.trajectory.TrajectoryMemory
-                          instead of the flat ECRM: retrieval is additionally
-                          conditioned on the parent genome's actual capacity
-                          regime (not just its model family), and the policy
-                          score is scaled by a continuous contextual success
-                          rate rather than halved by a binary failure flag.
-                          A genuine alternative memory design, benchmarked
-                          against "full" rather than assumed superior to it.
-  - "no_memory":         policy learner still adapts within the run (so
-                          short-horizon learning is not the thing being
-                          measured), but no cross-experiment memory of any
-                          kind -- isolates the *memory* contribution, full
-                          stop, regardless of which memory design is used.
-  - "random":            uniform-random strategy choice, no learning of any
-                          kind -- the naive baseline ("LLM-only"/random-search
-                          in the design doc's Sec. 6 baselines).
+                          instead of the flat ECRM.
+  - "no_memory":         policy learner still adapts within the run but no
+                          cross-experiment memory.
+  - "random":            uniform-random strategy choice, no learning.
 """
 from __future__ import annotations
 import random
@@ -47,6 +47,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from ..rdg.graph import ResearchDevelopmentGraph
 from ..genome.model_genome import ModelGenome
+from ..genome.target_model_genome import TargetModelGenome  # alpha.2.1: TMG is now the evolutionary object
 from ..genome.operators import STRATEGIES
 from ..memory.ecrm import ECRM
 from ..memory.trajectory import (
@@ -57,6 +58,7 @@ from ..diagnosis.failure_taxonomy import diagnose, ExperimentResult, FailureCate
 from ..evaluators.sklearn_evaluator import evaluate_genome
 from .discovery import HeuristicSynthesizer, unit_test
 from ..benchmarks.tasks import Task
+from ..state.research_state import ResearchState
 
 CONDITIONS = ("full", "trajectory_memory", "no_memory", "random")
 
@@ -79,13 +81,14 @@ class RunResult:
     task_name: str
     condition: str
     trials: List[TrialRecord] = field(default_factory=list)
-    best_genome: Optional[ModelGenome] = None
+    best_genome: Optional[TargetModelGenome] = None   # alpha.2.1: TMG (was ModelGenome)
     best_metric: float = 0.0
     rdg_stats: dict = field(default_factory=dict)
     memory_half_life_days: float = float("nan")
     trajectory_stats: Dict[str, int] = field(default_factory=dict)
     wall_time_s: float = 0.0
     rsg_id: Optional[str] = None  # RF-1.0.0-alpha.2: set if RSG was provided
+    states: List[ResearchState] = field(default_factory=list)  # alpha.2.1: ResearchState per generation
 
 
 class ResearchController:
@@ -113,28 +116,48 @@ class ResearchController:
         self.seed = seed
         self.rng = random.Random(seed)
         self.rdg = ResearchDevelopmentGraph()
-        self.ecrm = ECRM(decay_lambda=0.08, retention_threshold=0.12)
+
+        # RSG provenance + wiring (RF-1.0.0-alpha.2.1)
+        self.rsg = rsg
+
+        # ── RSG memory_config wiring (alpha.2.1, low-risk) ────────────────
+        # When rsg is provided, its memory_config overrides the hardcoded
+        # RF-0.x defaults. When rsg=None, exact same defaults as before.
+        # NOT wired: validity_config params (require ExperimentSpec fingerprinting, alpha.3).
+        if rsg is not None:
+            _decay_lambda = rsg.memory_config.decay_lambda
+            _retention_threshold = rsg.memory_config.retention_threshold
+        else:
+            _decay_lambda = 0.08        # RF-0.x hardcoded default
+            _retention_threshold = 0.12 # RF-0.x hardcoded default
+
+        self.ecrm = ECRM(decay_lambda=_decay_lambda, retention_threshold=_retention_threshold)
         self.trajectory_memory = TrajectoryMemory()
         self.policy = PolicyLearner(STRATEGIES, rng=self.rng)
         self.synth = HeuristicSynthesizer()
         self.population_size = population_size
-        # "memory_enabled" = uses SOME cross-experiment memory (either design);
-        # the two flags below select WHICH design, mutually exclusive by construction.
         self.memory_enabled = condition in ("full", "trajectory_memory")
         self.use_flat_memory = condition == "full"
         self.use_trajectory_memory = condition == "trajectory_memory"
         self.use_policy = condition in ("full", "trajectory_memory", "no_memory")
         self._failed_signatures = set()
-        self.use_sandbox = use_sandbox
-        self._sandbox = None
-        if use_sandbox:
-            from ..safety.sandbox import SafeRunner, ResourceBudget
-            self._sandbox = SafeRunner(ResourceBudget(per_experiment_timeout_s=sandbox_timeout_s))
 
-        # RSG provenance (RF-1.0.0-alpha.2)
-        # Stored for RunResult.rsg_id; does NOT alter execution in alpha.2.
-        # Full RSG-driven wiring is scheduled for alpha.3 (VRDEG integration).
-        self.rsg = rsg
+        # ── RSG execution_config wiring (alpha.2.1) ───────────────────────
+        # execution_config controls sandbox/resource policy, NOT scientific validity.
+        # RSG.execution_config.execution_mode="sandboxed" overrides use_sandbox arg.
+        # Mandatory safety (schema validate, genome safety_check, provenance) always runs.
+        if rsg is not None and rsg.execution_config.execution_mode == "sandboxed":
+            _use_sandbox = True
+            _sandbox_timeout = rsg.execution_config.per_experiment_timeout_s
+        else:
+            _use_sandbox = use_sandbox
+            _sandbox_timeout = sandbox_timeout_s
+
+        self.use_sandbox = _use_sandbox
+        self._sandbox = None
+        if _use_sandbox:
+            from ..safety.sandbox import SafeRunner, ResourceBudget
+            self._sandbox = SafeRunner(ResourceBudget(per_experiment_timeout_s=_sandbox_timeout))
 
         self.problem = self.rdg.add_node(
             "Problem", f"Improve {task.metric_fn.__name__} on {task.name}")
@@ -142,24 +165,39 @@ class ResearchController:
             "Gap", f"No model yet reaches target {task.target_metric} on {task.name}")
         self.rdg.add_edge(self.problem.id, self.gap.id, "identifies")
 
-        base = ModelGenome.default(initial_model_type, seed=seed)
+        # ── alpha.2.1: Population uses TargetModelGenome ──────────────────
+        # Evaluators (sklearn_evaluator, capacity_bucket) still expect ModelGenome;
+        # we bridge via .to_model_genome() in _run_experiment and _select_strategy.
+        # This preserves bitwise-identical trajectories (regression-verified).
+        base_mg = ModelGenome.default(initial_model_type, seed=seed)
+        base = TargetModelGenome.from_model_genome(base_mg)
         base._score = -1.0
-        self.population: List[ModelGenome] = [base]
+        self.population: List[TargetModelGenome] = [base]
 
     # ------------------------------------------------------------------
-    def _run_experiment(self, genome: ModelGenome) -> ExperimentResult:
-        """Runs evaluate_genome() directly by default (fast, matches the
-        RDE-Bench numbers this repo reports); set use_sandbox=True at
-        construction to route every experiment through
-        safety.sandbox.SafeRunner instead -- real process isolation, a hard
-        per-experiment timeout, and a tracked budget, at the cost of one
-        process fork per experiment. Recommended whenever genomes might come
-        from a less-trusted source (e.g. a wired-up LLMSynthesizer) rather
-        than this repo's own bounded evolution operators."""
+    def _run_experiment(self, genome: TargetModelGenome) -> ExperimentResult:
+        """Run evaluate_genome on this TMG genome.
+
+        alpha.2.1 bridge: evaluator still expects ModelGenome; we convert via
+        .to_model_genome(). This preserves bitwise-identical trajectories.
+
+        Mandatory safety (always runs regardless of execution_mode):
+          - genome.safety_check() — genome-level sanity
+          - schema validation happens at TMG construction
+          - result is an ExperimentResult (validated return type)
+        """
+        # Mandatory safety check (not skipped by trusted_offline)
+        violations = genome.safety_check()
+        if violations:
+            return ExperimentResult(metric=0.0, success=False,
+                                     exception=f"genome failed safety_check: {violations}",
+                                     target=self.task.target_metric)
+        # Bridge to evaluator (ModelGenome API)
+        mg = genome.to_model_genome()
         if self._sandbox is not None:
             from ..safety.sandbox import SafetyStatus
             outcome = self._sandbox.run(
-                evaluate_genome, genome, self.task.X_train, self.task.y_train,
+                evaluate_genome, mg, self.task.X_train, self.task.y_train,
                 self.task.X_val, self.task.y_val, self.task.metric_fn,
                 target=self.task.target_metric)
             if outcome.status == SafetyStatus.OK:
@@ -167,7 +205,7 @@ class ResearchController:
             return ExperimentResult(metric=0.0, success=False,
                                      exception=f"{outcome.status.value}: {outcome.error}",
                                      target=self.task.target_metric)
-        return evaluate_genome(genome, self.task.X_train, self.task.y_train,
+        return evaluate_genome(mg, self.task.X_train, self.task.y_train,
                                 self.task.X_val, self.task.y_val,
                                 self.task.metric_fn, target=self.task.target_metric)
 
@@ -187,13 +225,14 @@ class ResearchController:
         separate cleanly in embedding space."""
         return f"{strategy} {model_type} {self.task.name}"
 
-    def _select_strategy(self, parent: ModelGenome) -> Tuple[str, bool]:
+    def _select_strategy(self, parent: TargetModelGenome) -> Tuple[str, bool]:
         if self.condition == "random":
             return self.policy.select_random(), False
         if self.condition == "no_memory":
             return self.policy.select_action(), False
         if self.condition == "trajectory_memory":
-            parent_bucket = capacity_bucket(parent)
+            parent_mg = parent.to_model_genome()  # bridge for capacity_bucket
+            parent_bucket = capacity_bucket(parent_mg)
             multiplier = lambda a: 0.3 + 0.7 * self.trajectory_memory.contextual_success_rate(
                 a, parent.model_type, parent_bucket)
             return self.policy.select_action(score_multiplier=multiplier), True
@@ -218,6 +257,7 @@ class ResearchController:
 
         # -- baseline: evaluate the seed genome before any search (generation -1)
         base = self.population[0]
+        base_mg = base.to_model_genome()  # bridge for evaluator
         base_result = self._run_experiment(base)
         base_failure = diagnose(base_result)
         base._score = base_result.metric if base_result.success else -1.0
@@ -230,7 +270,7 @@ class ResearchController:
         self.rdg.add_edge(self.gap.id, hyp0.id, "motivates")
         exp0 = self.rdg.add_node(
             "Experiment", f"Train/evaluate baseline {base.model_type}",
-            attributes={"genome_id": base.model_id})
+            attributes={"genome_id": base.tmg_id})
         self.rdg.add_edge(hyp0.id, exp0.id, "tested-by")
         finding0 = self.rdg.add_node(
             "Finding", f"metric={base_result.metric:.4f} failure={base_failure.value}",
@@ -238,12 +278,12 @@ class ResearchController:
         self.rdg.add_edge(exp0.id, finding0.id, "produces")
         if self.use_flat_memory:
             self.ecrm.store(text_summary=self._mem_key("baseline", base.model_type),
-                             context={"task": self.task.name, "genome": base.to_dict()},
+                             context={"task": self.task.name, "genome": base_mg.to_dict()},
                              outcome={"metric": base_result.metric, "success": base_result.success,
                                       "failure": base_failure.value},
                              strategy="baseline")
         elif self.use_trajectory_memory:
-            base_bucket = capacity_bucket(base)
+            base_bucket = capacity_bucket(base_mg)
             self.trajectory_memory.store(TrajectoryRecord(
                 id=new_trajectory_id(), generation=-1, stage="baseline",
                 problem_context=self.gap.content,
@@ -254,7 +294,19 @@ class ResearchController:
                 failure=base_failure.value,
                 hypothesis_id=hyp0.id, experiment_id=exp0.id, finding_id=finding0.id))
         self._record_trial(result, -1, "baseline", base.model_type, base_result,
-                            best_metric, base_failure, False, False, base.model_id)
+                            best_metric, base_failure, False, False, base.tmg_id)
+        result.states.append(ResearchState.create(
+            generation=-1,
+            research_phase="exploration" if self.rsg is None else self.rsg.research_phase,
+            active_rsg_id="" if self.rsg is None else self.rsg.rsg_id,
+            active_rsg_fingerprint="" if self.rsg is None else self.rsg.fingerprint(),
+            candidate_tmg_ids=[base.tmg_id],
+            best_tmg_id=base.tmg_id if base_result.success else None,
+            best_metric=best_metric,
+            budget_remaining=n_generations,
+            problem_id=self.problem.id,
+            active_hypothesis_ids=[hyp0.id],
+        ))
 
         # -- generational search loop
         for gen in range(n_generations):
@@ -267,13 +319,18 @@ class ResearchController:
                 attributes={"strategy": strategy, "generation": gen})
             self.rdg.add_edge(self.gap.id, hyp.id, "motivates")
 
-            child = self.synth.synthesize(strategy, parent, self.rng, self.population)
-            child.generation = gen
-            valid = unit_test(child)
+            # alpha.2.1: synthesizer still works with ModelGenome API;
+            # convert parent TMG → ModelGenome for synthesis, then wrap back.
+            parent_mg = parent.to_model_genome()
+            child_mg = self.synth.synthesize(strategy, parent_mg, self.rng,
+                                              [g.to_model_genome() for g in self.population])
+            child_mg.generation = gen
+            child = TargetModelGenome.from_model_genome(child_mg)
+            valid = unit_test(child_mg)
 
             exp = self.rdg.add_node(
                 "Experiment", f"Train/evaluate {child.model_type} (gen {gen})",
-                attributes={"genome_id": child.model_id})
+                attributes={"genome_id": child.tmg_id})
             self.rdg.add_edge(hyp.id, exp.id, "tested-by")
 
             if not valid:
@@ -304,7 +361,7 @@ class ResearchController:
             if self.use_flat_memory:
                 self.ecrm.store(
                     text_summary=self._mem_key(strategy, child.model_type),
-                    context={"task": self.task.name, "genome": child.to_dict()},
+                    context={"task": self.task.name, "genome": child_mg.to_dict()},
                     outcome={"metric": exp_result.metric,
                              "success": failure == FailureCategory.NONE,
                              "failure": failure.value},
@@ -317,10 +374,10 @@ class ResearchController:
                     stage=generation_stage(gen, n_generations),
                     problem_context=self.gap.content,
                     parent_model_type=parent.model_type,
-                    parent_capacity_bucket=capacity_bucket(parent),
+                    parent_capacity_bucket=capacity_bucket(parent_mg),
                     strategy=strategy,
                     child_model_type=child.model_type,
-                    child_capacity_bucket=capacity_bucket(child),
+                    child_capacity_bucket=capacity_bucket(child_mg),
                     metric=exp_result.metric,
                     success=(failure == FailureCategory.NONE),
                     failure=failure.value,
@@ -340,7 +397,20 @@ class ResearchController:
                 self.population = self.population[: self.population_size]
 
             self._record_trial(result, gen, strategy, child.model_type, exp_result,
-                                best_metric, failure, used_memory, neg_transfer, child.model_id)
+                                best_metric, failure, used_memory, neg_transfer, child.tmg_id)
+            result.states.append(ResearchState.create(
+                generation=gen,
+                research_phase="exploration" if self.rsg is None else self.rsg.research_phase,
+                active_rsg_id="" if self.rsg is None else self.rsg.rsg_id,
+                active_rsg_fingerprint="" if self.rsg is None else self.rsg.fingerprint(),
+                candidate_tmg_ids=[g.tmg_id for g in self.population],
+                best_tmg_id=best_genome.tmg_id if best_genome else None,
+                best_metric=best_metric,
+                budget_remaining=n_generations - (gen + 1),
+                problem_id=self.problem.id,
+                active_hypothesis_ids=[hyp.id],
+                unresolved_failure_ids=[f"{sig[0]}_{sig[1]}" for sig in self._failed_signatures],
+            ))
 
         result.best_genome = best_genome
         result.best_metric = best_metric

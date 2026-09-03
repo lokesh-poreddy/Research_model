@@ -170,25 +170,37 @@ def random_perturbation(genome: ModelGenome, rng: random.Random) -> ModelGenome:
     return g
 
 
-def apply_strategy(strategy: str, genome: ModelGenome, rng: random.Random,
-                    population: Optional[List[ModelGenome]] = None) -> ModelGenome:
-    """Strategy name -> concrete genome edit. This is the seam where a real
-    LLM-driven synthesizer would plug in instead (see pipeline/discovery.py)."""
+def apply_strategy(strategy: str, genome: Any, rng: random.Random,
+                    population: Optional[List[Any]] = None) -> Any:
+    """Strategy name -> concrete genome edit. Works with ModelGenome and TargetModelGenome."""
+    from .target_model_genome import TargetModelGenome
+    is_tmg = isinstance(genome, TargetModelGenome)
+    g = genome.to_model_genome() if is_tmg else genome
+    pop = [p.to_model_genome() if isinstance(p, TargetModelGenome) else p for p in population] if population else None
+
     if strategy == "increase_capacity":
-        return increase_capacity(genome, rng)
-    if strategy == "add_regularization":
-        return add_regularization(genome, rng)
-    if strategy == "tune_learning_dynamics":
-        return tune_learning_dynamics(genome, rng)
-    if strategy == "change_family":
-        return change_family(genome, rng)
-    if strategy == "feature_preprocessing":
-        return feature_preprocessing(genome, rng)
-    if strategy == "crossover_top2":
-        if population and len(population) >= 2:
-            a, b = rng.sample(population, 2)
-            return crossover(a, b, rng)
-        return random_perturbation(genome, rng)
-    if strategy == "random_perturbation":
-        return random_perturbation(genome, rng)
-    raise ValueError(f"Unknown strategy '{strategy}'")
+        res = increase_capacity(g, rng)
+    elif strategy == "add_regularization":
+        res = add_regularization(g, rng)
+    elif strategy == "tune_learning_dynamics":
+        res = tune_learning_dynamics(g, rng)
+    elif strategy == "change_family":
+        res = change_family(g, rng)
+    elif strategy == "feature_preprocessing":
+        res = feature_preprocessing(g, rng)
+    elif strategy == "crossover_top2":
+        if pop and len(pop) >= 2:
+            a, b = rng.sample(pop, 2)
+            res = crossover(a, b, rng)
+        else:
+            res = random_perturbation(g, rng)
+    elif strategy == "random_perturbation":
+        res = random_perturbation(g, rng)
+    else:
+        raise ValueError(f"Unknown strategy '{strategy}'")
+
+    if is_tmg:
+        tmg = TargetModelGenome.from_model_genome(res)
+        tmg.operator = strategy
+        return tmg
+    return res

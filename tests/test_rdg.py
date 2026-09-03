@@ -1,7 +1,13 @@
 """
 Unit tests for the Research Development Graph (RDG).
+
+Classification: COMPATIBILITY
+Tests the legacy rdg/ module. Behavior preserved deliberately.
+Canonical replacement: researchforge.rdg.graph
 """
 import pytest
+
+pytestmark = pytest.mark.COMPATIBILITY
 
 from rdg.graph import ResearchDevelopmentGraph
 from rdg.nodes import NodeStatus, NodeType, RDGNode

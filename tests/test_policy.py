@@ -1,10 +1,16 @@
 """
-Tests for v2 policy modules: BudgetAllocator and select_branch (empty-list, Thompson).
+Tests for v2 policy modules: BudgetAllocator and select_branch.
+
+Classification: LEGACY
+Tests the legacy policy/ module. Retained as historical/archival evidence.
+Canonical replacement: researchforge.policy.policy_learner
 """
 from __future__ import annotations
 
 import time
 import pytest
+
+pytestmark = pytest.mark.LEGACY
 
 from policy.budget_allocator import BudgetAllocator
 from policy.acquisition import select_branch

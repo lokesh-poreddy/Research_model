@@ -14,7 +14,7 @@ project:
     gating. Long-term target: a system that can research, branch, experiment,
     fail, diagnose, remember, and improve itself.
   schema_version: 1
-  current_release: RF-1.0.0-alpha.2
+  current_release: RF-1.0.0-alpha.2.1
   release_stage: alpha  # alpha | beta | rc | release
 
 # ─── Baseline ────────────────────────────────────────────────────────────────
@@ -683,10 +683,106 @@ releases:
       - pgvector / Neo4j production backends (post-RF-1.0)
       - Real LLM research loop (scheduled RF-1.5+)
 
+  - release: RF-1.0.0-alpha.2.1
+    tag: v5
+    date: 2026-09
+    release_stage: alpha
+    objective: >
+      Architecture convergence and contract hardening. Establishes ONE canonical
+      domain model (14 objects across Classes A, B, C, D), ONE canonical execution
+      path (controller population upgraded to TargetModelGenome), ONE canonical
+      provenance model (ExperimentSpec, ExperimentRun, ExperimentOutcome), ONE
+      canonical configuration hierarchy (4 scopes), and automated boundary
+      enforcement (no cross-stack imports).
+    key_decisions:
+      AD-014: >
+        RSG configuration hierarchy separation: ExecutionConfig (resource and sandbox
+        policy) separated cleanly from ResearchValidityConfig (scientific evaluation
+        parameters). trusted_offline retains mandatory schema, safety, and provenance checks.
+      AD-015: >
+        Preventing silent scientific protocol shifts: ExperimentSpec captures
+        validity_config_fingerprint. Any evolution of SVG parameters changes the
+        spec_id and fingerprint, making protocol changes visible in provenance.
+      AD-016: >
+        Canonical contract objects: Class A immutable (RSG, TMG, ExperimentSpec,
+        ExperimentRun, ExperimentOutcome, Evidence, Artifact, Provenance, Decision,
+        Failure), Class B versioned mutable envelope (MemoryRecord), Class C reserved
+        (ResearchProblem, Hypothesis), Class D binding (ResearchState).
+      AD-017: >
+        Controller migration: Controller population uses TargetModelGenome. Evaluator
+        receives .to_model_genome() for exact backward-compatible evaluation.
+      AD-018: >
+        Deterministic trajectory fingerprinting: TrajectoryFingerprint hashes
+        canonical trial decisions across generations. Proven bitwise-identical to RF-0.x
+        baseline across seeds and conditions.
+      AD-019: >
+        Architectural boundary guard: test_no_cross_stack_imports AST analyzer prevents
+        any canonical researchforge/ module from importing legacy namespaces.
+    new_modules:
+      - researchforge/experiment/__init__.py
+      - researchforge/experiment/spec.py
+      - researchforge/experiment/run.py
+      - researchforge/experiment/outcome.py
+      - researchforge/experiment/trajectory.py
+      - researchforge/evidence/__init__.py
+      - researchforge/evidence/evidence.py
+      - researchforge/artifact/__init__.py
+      - researchforge/artifact/artifact.py
+      - researchforge/decision/__init__.py
+      - researchforge/decision/decision.py
+      - researchforge/diagnosis/failure.py
+      - researchforge/memory/record.py
+      - researchforge/state/__init__.py
+      - researchforge/state/research_state.py
+      - researchforge/research/__init__.py
+      - researchforge/research/problem.py
+      - researchforge/research/hypothesis.py
+      - researchforge/retrieval/openalex.py
+      - researchforge/retrieval/semantic_scholar.py
+      - researchforge/retrieval/arxiv.py
+      - researchforge/config/rf_config.py
+      - researchforge/config/env_config.py
+      - scripts/capture_release_state.py
+      - tests/test_experiment.py
+      - tests/test_state.py
+      - tests/test_research.py
+      - tests/test_retrieval.py
+      - tests/test_config.py
+      - tests/test_no_cross_stack_imports.py
+      - tests/test_canonical_invariants.py
+    modified_modules:
+      - researchforge/genome/research_system_genome.py
+      - researchforge/genome/operators.py
+      - researchforge/pipeline/controller.py
+      - researchforge/memory/ecrm.py
+      - researchforge/memory/__init__.py
+      - researchforge/diagnosis/__init__.py
+      - researchforge/retrieval/__init__.py
+      - pytest.ini
+      - tests/conftest.py
+    tests:
+      CORE: 171
+      COMPATIBILITY: 51
+      LEGACY: 47
+      total_tests: 269
+      baseline_before_alpha2_1: 203
+      new_tests_this_release: 66
+      all_pass: true
+    regression_benchmark:
+      result: NO_REGRESSION
+      max_delta: 0.0
+      trajectory_fingerprints_verified: true
+    summary: >
+      Architecture convergence completed. All 14 canonical domain objects implemented
+      with strict schema validation and deterministic fingerprinting. Controller population
+      migrated to TargetModelGenome with bitwise trajectory parity verified across seeds 0, 1, 2.
+      Cross-stack import guard AST test enforces the boundary. 269 tests passing (171 CORE,
+      51 COMPATIBILITY, 47 LEGACY) with 0 failures.
+
 # ─── Next upgrade ─────────────────────────────────────────────────────────────
 next_upgrade:
   release_target: RF-1.0.0-alpha.3
-  prerequisite: RF-1.0.0-alpha.2 VERIFIED (current)
+  prerequisite: RF-1.0.0-alpha.2.1 VERIFIED (current)
   tasks:
     - VRDEG (Versioned Research Development + Experiment Graph)
     - RSG-driven execution wiring (RSG controls research loop parameters)

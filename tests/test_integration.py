@@ -1,7 +1,14 @@
 """
 Integration test: full research loop — includes v2 tests.
+
+Classification: LEGACY
+Tests the legacy agents/controller_agent against legacy ecrm/rdg modules.
+Retained as historical/archival evidence.
+Canonical replacement: researchforge.pipeline.controller
 """
 import pytest
+
+pytestmark = pytest.mark.LEGACY
 
 from agents.controller_agent import ResearchController
 from ecrm.memory_store import ECRMMemoryStore

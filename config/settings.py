@@ -3,6 +3,14 @@ ResearchForge-ECRM Configuration Settings — v2
 """
 from __future__ import annotations
 
+LEGACY_STATUS = {
+    "canonical": False,
+    "replacement": "researchforge.config",
+    "deprecated_since": "RF-1.0.0-alpha.2.1",
+    "removal_target": None,  # preserved for legacy CLI (main.py)
+    "cross_imports_allowed": False,  # researchforge/ must never import from here
+}
+
 from pathlib import Path
 from typing import Optional
 

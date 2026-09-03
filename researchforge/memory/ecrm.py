@@ -57,20 +57,7 @@ from ..adapters.backends.inprocess_vector import InProcessVectorIndex
 from ..adapters.protocols import VectorIndexBackend
 
 
-@dataclass
-class MemoryRecord:
-    id: str
-    text_summary: str
-    embedding: list
-    context: Dict[str, Any]
-    outcome: Dict[str, Any]
-    strategy: str
-    created_at: float = field(default_factory=time.time)
-    tier: str = "short_term"              # "short_term" (working) | "long_term" (consolidated)
-    consolidation_passes_survived: int = 0
-    archived: bool = False
-    retrieval_count: int = 0
-    negative_transfer_count: int = 0
+from .record import MemoryRecord
 
 
 class ECRM:

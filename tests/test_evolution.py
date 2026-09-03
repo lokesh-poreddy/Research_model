@@ -1,7 +1,14 @@
 """
 Unit tests for Evolution operators.
+
+Classification: COMPATIBILITY
+Tests the legacy evolution/ module. Behavior preserved deliberately.
+Canonical replacement: researchforge.genome.operators + researchforge.genome.target_model_genome
 """
 import pytest
+
+pytestmark = pytest.mark.COMPATIBILITY
+
 from evolution.genome import ModelGenome
 from policy.strategy_portfolio import StrategyPortfolio
 from evolution.mutate import (

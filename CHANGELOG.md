@@ -7,6 +7,54 @@ and must be preserved — they are not removed from this file.
 Format follows [Keep a Changelog](https://keepachangelog.com).
 
 ---
+## [RF-1.0.0-alpha.2.1] — 2026-09-03 — Architecture Convergence & Contract Hardening
+
+**Character of release**: Architectural. Reconciles dual-stack architecture into
+ONE canonical domain model (14 objects), ONE canonical execution path (TMG population),
+ONE canonical provenance model (ExperimentSpec/Run/Outcome), ONE canonical configuration
+hierarchy (4 scopes), and AST-enforced boundary isolation. 269 tests pass (171 CORE,
+51 COMPATIBILITY, 47 LEGACY) with 0 failures. Trajectory bitwise identical to baseline.
+
+### Added
+- **14 Canonical Domain Objects**:
+  - Class A immutable: `ResearchSystemGenome`, `TargetModelGenome`, `ExperimentSpec`,
+    `ExperimentRun`, `ExperimentOutcome`, `Evidence`, `Artifact`, `Provenance`,
+    `ResearchDecision`, `Failure`.
+  - Class B versioned mutable: `MemoryRecord`.
+  - Class C reserved positions: `ResearchProblem`, `Hypothesis`.
+  - Class D binding: `ResearchState`.
+- **Deterministic Trajectory Fingerprinting**:
+  - `TrajectoryFingerprint` and `compute_trajectory_fingerprint` in `researchforge/experiment/trajectory.py`.
+- **Cross-Stack Import Guard**:
+  - `tests/test_no_cross_stack_imports.py` enforces zero legacy imports from canonical code.
+- **Canonical Configuration Hierarchy**:
+  - Scope 1 (Software): `researchforge/config/rf_config.py` (`RFConfig`).
+  - Scope 2 (Environment): `researchforge/config/env_config.py` (`EnvConfig`).
+  - Scope 3 (Research Policy): `RSG.execution_config` and sub-configs.
+  - Scope 4 (Experiment): `ExperimentSpec`.
+- **Automated Release Manifest**:
+  - `scripts/capture_release_state.py` auto-counts tests by marker, extracts git status and package versions.
+- **66 New CORE Tests**:
+  - `test_genomes.py` (+5 tests for execution/termination configs)
+  - `test_experiment.py` (20 tests for experiment domain objects)
+  - `test_state.py` (8 tests for ResearchState and controller state integration)
+  - `test_research.py` (6 tests for ResearchProblem and Hypothesis)
+  - `test_canonical_invariants.py` (8 tests covering shared canonical invariants)
+  - `test_no_cross_stack_imports.py` (1 test boundary verification)
+  - `test_retrieval.py` (10 tests covering literature retrieval adapters)
+  - `test_config.py` (8 tests covering configuration hierarchy)
+
+### Changed
+- `ResearchController`:
+  - Population upgraded from `List[ModelGenome]` to `List[TargetModelGenome]`.
+  - Integrates `ResearchState` generation into run loop (`result.states`).
+  - Wires `RSG.memory_config` and `RSG.execution_config`.
+  - Preserves bitwise-identical trajectories to baseline across seeds 0, 1, 2.
+- `researchforge/genome/research_system_genome.py`:
+  - Added `ExecutionConfig`, `OperatorConfig`, `TerminationConfig`.
+- Legacy modules (`agents/`, `ecrm/`, `evolution/`, `rdg/`, `policy/`, `failure/`, `tools/`, `config/`):
+  - Annotated with machine-readable `LEGACY_STATUS` dictionaries.
+
 ---
 
 ## [RF-1.0.0-alpha.2] — 2026-09-02 — Two-Level Genome Architecture

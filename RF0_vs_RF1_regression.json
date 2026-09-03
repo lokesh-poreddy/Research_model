@@ -1,6 +1,6 @@
 {
   "benchmark": "RF0_vs_RF1_regression",
-  "timestamp": "2026-09-02T07:58:34Z",
+  "timestamp": "2026-09-03T17:47:39Z",
   "parameters": {
     "seeds": [
       0,
@@ -22,7 +22,7 @@
       "mean_metric": 0.8186007540846251,
       "frr": 1.0,
       "trajectory_hash": "2cf638478f6111ed",
-      "wall_time_s": 0.4219669580925256,
+      "wall_time_s": 0.44869741587899625,
       "rsg_id": null
     },
     {
@@ -33,7 +33,7 @@
       "mean_metric": 0.813782991202346,
       "frr": 1.0,
       "trajectory_hash": "42cb970c9ebf4e15",
-      "wall_time_s": 0.16785708302631974,
+      "wall_time_s": 0.17043495899997652,
       "rsg_id": null
     },
     {
@@ -44,7 +44,7 @@
       "mean_metric": 0.8519061583577713,
       "frr": 1.0,
       "trajectory_hash": "060159ff58c36e29",
-      "wall_time_s": 0.30541691603139043,
+      "wall_time_s": 0.2959670419804752,
       "rsg_id": null
     },
     {
@@ -55,7 +55,7 @@
       "mean_metric": 0.8352534562211982,
       "frr": 1.0,
       "trajectory_hash": "aa6c0704eed6c4e5",
-      "wall_time_s": 0.10816958290524781,
+      "wall_time_s": 0.10387500002980232,
       "rsg_id": null
     },
     {
@@ -66,7 +66,7 @@
       "mean_metric": 0.8355676581483032,
       "frr": 1.0,
       "trajectory_hash": "f79570630ad45863",
-      "wall_time_s": 0.0829929169267416,
+      "wall_time_s": 0.07814599992707372,
       "rsg_id": null
     },
     {
@@ -77,7 +77,7 @@
       "mean_metric": 0.8510682865521576,
       "frr": 1.0,
       "trajectory_hash": "9cb3dbea323fd9e1",
-      "wall_time_s": 0.21273266687057912,
+      "wall_time_s": 0.20566179207526147,
       "rsg_id": null
     }
   ],
@@ -90,7 +90,7 @@
       "mean_metric": 0.8186007540846251,
       "frr": 1.0,
       "trajectory_hash": "2cf638478f6111ed",
-      "wall_time_s": 0.23511366709135473,
+      "wall_time_s": 0.2384162920061499,
       "rsg_id": "rsg_c5fb5e7d00c57bb2"
     },
     {
@@ -101,7 +101,7 @@
       "mean_metric": 0.813782991202346,
       "frr": 1.0,
       "trajectory_hash": "42cb970c9ebf4e15",
-      "wall_time_s": 0.1672464171424508,
+      "wall_time_s": 0.17005529114976525,
       "rsg_id": "rsg_12267d1a6d65c807"
     },
     {
@@ -112,7 +112,7 @@
       "mean_metric": 0.8519061583577713,
       "frr": 1.0,
       "trajectory_hash": "060159ff58c36e29",
-      "wall_time_s": 0.29987099999561906,
+      "wall_time_s": 0.28614241699688137,
       "rsg_id": "rsg_c3cceaba36068875"
     },
     {
@@ -123,7 +123,7 @@
       "mean_metric": 0.8352534562211982,
       "frr": 1.0,
       "trajectory_hash": "aa6c0704eed6c4e5",
-      "wall_time_s": 0.11188291688449681,
+      "wall_time_s": 0.10527333407662809,
       "rsg_id": "rsg_8b866acec6d4cbae"
     },
     {
@@ -134,7 +134,7 @@
       "mean_metric": 0.8355676581483032,
       "frr": 1.0,
       "trajectory_hash": "f79570630ad45863",
-      "wall_time_s": 0.08485754090361297,
+      "wall_time_s": 0.07939666602760553,
       "rsg_id": "rsg_2ef2b7d11be1c634"
     },
     {
@@ -145,7 +145,7 @@
       "mean_metric": 0.8510682865521576,
       "frr": 1.0,
       "trajectory_hash": "9cb3dbea323fd9e1",
-      "wall_time_s": 0.2042638340499252,
+      "wall_time_s": 0.20697937509976327,
       "rsg_id": "rsg_25a42b12928c651b"
     }
   ],

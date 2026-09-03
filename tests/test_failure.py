@@ -1,9 +1,15 @@
 """
 Tests for v2 failure module: taxonomy, diagnosis, and repair handlers.
+
+Classification: LEGACY
+Tests the legacy failure/ module. Retained as historical/archival evidence.
+Canonical replacement: researchforge.diagnosis
 """
 from __future__ import annotations
 
 import pytest
+
+pytestmark = pytest.mark.LEGACY
 
 from failure.taxonomy import FailureCategory, REPAIR_ACTIONS, all_categories
 from failure.diagnosis import diagnose_failure

@@ -43,6 +43,9 @@ from .research_system_genome import (                                     # noqa
     ResearchMemoryConfig,
     ResearchValidityConfig,
     ResearchRetrievalConfig,
+    ExecutionConfig,
+    OperatorConfig,
+    TerminationConfig,
     GENOME_SCHEMA_RSG,
     RSG_EVOLUTION_OPERATORS,
 )
