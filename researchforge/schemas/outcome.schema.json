@@ -1,0 +1,23 @@
+{
+  "$id": "outcome.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Outcome",
+  "type": "object",
+  "required": ["id", "schema_version", "run_id"],
+  "properties": {
+    "id": { "type": "string" },
+    "schema_version": { "type": "string" },
+    "run_id": { "type": "string" },
+    "measured_metrics": { "type": ["object", "null"] },
+    "baseline_metrics": { "type": ["object", "null"] },
+    "improvement": { "type": ["object", "null"] },
+    "statistical_summary": { "type": ["object", "null"] },
+    "success": { "type": ["boolean", "null"] },
+    "failure_category": { "type": ["string", "null"] },
+    "validity": { "type": ["object", "null"] },
+    "reproducibility": { "type": ["object", "null"] },
+    "environment_fingerprint": { "type": ["string", "null"] },
+    "artifact_refs": { "type": ["array", "null"], "items": { "type": "string" } }
+  },
+  "additionalProperties": false
+}

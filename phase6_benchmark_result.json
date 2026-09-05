@@ -1,0 +1,15 @@
+{
+  "events": 43,
+  "nodes": 45,
+  "edges": 43,
+  "apply_time_seconds": 0.0010391671676188707,
+  "reconstruct_time_seconds": 0.0010855409782379866,
+  "validate_time_seconds": 4.533398896455765e-05,
+  "report_summary": {
+    "num_states": 44,
+    "provenance_records": 1,
+    "outcomes": 10,
+    "failures": 0,
+    "consistency": true
+  }
+}

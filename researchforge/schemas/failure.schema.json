@@ -1,0 +1,23 @@
+{
+  "$id": "failure.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Failure",
+  "type": "object",
+  "required": ["id", "schema_version", "experiment_id"],
+  "properties": {
+    "id": { "type": "string" },
+    "schema_version": { "type": "string" },
+    "experiment_id": { "type": "string" },
+    "failure_category": { "type": ["string", "null"] },
+    "symptoms": { "type": ["object", "null"] },
+    "measured_conditions": { "type": ["object", "null"] },
+    "probable_causes": { "type": ["array", "null"], "items": { "type": "string" } },
+    "confidence": { "type": ["number", "null"] },
+    "recovery_attempts": { "type": ["array", "null"], "items": { "type": "object" } },
+    "recovery_results": { "type": ["array", "null"], "items": { "type": "object" } },
+    "transferable_lesson": { "type": ["string", "null"] },
+    "forbidden_future_actions": { "type": ["array", "null"], "items": { "type": "string" } },
+    "provenance_id": { "type": ["string", "null"] }
+  },
+  "additionalProperties": false
+}

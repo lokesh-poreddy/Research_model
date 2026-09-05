@@ -1,0 +1,29 @@
+{
+  "$id": "decision.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Decision",
+  "type": "object",
+  "required": ["id", "schema_version"],
+  "properties": {
+    "id": { "type": "string" },
+    "schema_version": { "type": "string" },
+    "research_state_fingerprint": { "type": ["string", "null"] },
+    "rsg_id": { "type": ["string", "null"] },
+    "hypothesis_id": { "type": ["string", "null"] },
+    "selected_tmg_id": { "type": ["string", "null"] },
+    "selected_operator": { "type": ["string", "null"] },
+    "decision_reason": { "type": ["string", "null"] },
+    "evidence_refs": { "type": ["array", "null"], "items": { "type": "string" } },
+    "memory_refs": { "type": ["array", "null"], "items": { "type": "string" } },
+    "expected_information_gain": { "type": ["number", "null"] },
+    "expected_performance_gain": { "type": ["number", "null"] },
+    "estimated_cost": { "type": ["number", "null"] },
+    "estimated_failure_risk": { "type": ["number", "null"] },
+    "exploration_score": { "type": ["number", "null"] },
+    "novelty_score": { "type": ["number", "null"] },
+    "confidence": { "type": ["number", "null"] },
+    "decision_timestamp": { "type": ["string", "null"], "format": "date-time" },
+    "policy_version": { "type": ["string", "null"] }
+  },
+  "additionalProperties": false
+}

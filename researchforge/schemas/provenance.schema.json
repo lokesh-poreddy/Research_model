@@ -1,0 +1,17 @@
+{
+  "$id": "provenance.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Provenance",
+  "type": "object",
+  "required": ["id", "schema_version", "created_by", "created_at"],
+  "properties": {
+    "id": { "type": "string" },
+    "schema_version": { "type": "string" },
+    "created_by": { "type": "string" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "parents": { "type": "array", "items": { "type": "string" } },
+    "notes": { "type": "string" },
+    "metadata": { "type": "object" }
+  },
+  "additionalProperties": false
+}

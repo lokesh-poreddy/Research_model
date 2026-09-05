@@ -1,0 +1,16 @@
+{
+  "$id": "question.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ResearchQuestion",
+  "type": "object",
+  "required": ["id", "schema_version", "problem_id", "question_text", "status"],
+  "properties": {
+    "id": { "type": "string" },
+    "schema_version": { "type": "string" },
+    "problem_id": { "type": "string" },
+    "question_text": { "type": "string" },
+    "rationale": { "type": ["string", "null"] },
+    "status": { "type": "string", "enum": ["OPEN", "ANSWERED", "ABANDONED"] }
+  },
+  "additionalProperties": false
+}
